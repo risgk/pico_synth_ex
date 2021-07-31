@@ -2,11 +2,9 @@
 #include <math.h>
 #include "pico/stdlib.h"
 #include "pico/float.h"
-#include "pico/multicore.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "hardware/pwm.h"
-#include "hardware/sync.h"
 
 typedef int32_t Q28; // 小数部28ビットの符号付き固定小数点数
 typedef int16_t Q14; // 小数部14ビットの符号付き固定小数点数
@@ -167,7 +165,6 @@ static void pwm_irq_handler() {
   s_time = pwm_get_counter(PWMA_SLICE);
   PWMA_process(
     Amp_process(Fil_process(Osc_process())));
-  __dmb();
   uint16_t end_time = pwm_get_counter(PWMA_SLICE);
   p_time = ((end_time - s_time) + PWMA_CYCLE)
                                          % PWMA_CYCLE;
@@ -179,8 +176,7 @@ static void pwm_irq_handler() {
 int main() {
   set_sys_clock_khz(FCLKSYS / 1000, true);
   stdio_init_all();
-  Osc_init(); Fil_init();
-  multicore_launch_core1(PWMA_init);
+  Osc_init(); Fil_init(); PWMA_init();
   while (true) {
     switch (getchar_timeout_us(0)) {
     case '1': Osc_pitch = 0; Amp_on = 1; break; // ド
