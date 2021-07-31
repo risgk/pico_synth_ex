@@ -1,3 +1,13 @@
+// pico_synth_ex v0.0.0 (2021-07-31)
+// 
+// Raspberry Pi Pico用ポリフォニック・シンセサイザ
+// 
+// このプログラムは，
+// - GNU Arm Embedded Toolchain Version 9-2019-q4-major（gcc-arm-none-eabi version 9.2.1）
+// - Raspberry Pi Pico C/C++ SDK version 1.1.2
+// - RP2040 bootrom B0 version（ブートROMバージョン1）
+// の組み合わせで動作確認しています．
+// 
 #include <stdio.h>
 #include <math.h>
 #include "pico/stdlib.h"
