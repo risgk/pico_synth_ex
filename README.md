@@ -19,6 +19,17 @@ Raspberry Pi Pico用のポリフォニック・シンセサイザです．
   https://interface.cqpub.co.jp/magazine/202108/
 
 
+## プログラム開発環境
+
+このプログラムは，
+
+- GNU Arm Embedded Toolchain Version 9-2019-q4-major（gcc-arm-none-eabi version 9.2.1）
+- Raspberry Pi Pico C/C++ SDK version 1.1.2
+- RP2040 bootrom B0 version（ブートROMバージョン1）
+
+の組み合わせで動作確認しています．
+
+
 ## 仕様
 
 - 部品構成：（2オシレータ ＋ 1フィルタ ＋ 1アンプ ＋ 1 LFO ＋ 1 EG）× 4セット
@@ -35,14 +46,3 @@ Raspberry Pi Pico用のポリフォニック・シンセサイザです．
 - '0'：音を止める．
 - 'z'／'x'：フィルタのカットオフ設定値を1下げる／上げる．（カットオフ周波数が約19.4Hz～約19.9kHzの121段階で変化，初期値：最大）
 - 'n'／'m'：フィルタのレゾナンス設定値を1下げる／上げる．（Q値が約0.7～4.0の6段階で変化，初期値：最小）
-
-
-## プログラム開発環境
-
-このプログラムは，
-
-- GNU Arm Embedded Toolchain Version 9-2019-q4-major（gcc-arm-none-eabi version 9.2.1）
-- Raspberry Pi Pico C/C++ SDK version 1.1.2
-- RP2040 bootrom B0 version（ブートROMバージョン1）
-
-の組み合わせで動作確認しています．
