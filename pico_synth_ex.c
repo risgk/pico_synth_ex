@@ -15,31 +15,28 @@ typedef int16_t Q14; // 小数部14ビットの符号付き固定小数点数
 #define FS      (48000)     // サンプリング周波数（Hz）
 #define FA      (440.0F)    // 基準周波数（Hz）
 //////// オシレータ //////////////////////////////
-static uint32_t          Osc_freq_table[121];       // 周波数テーブル
-static Q14               Osc_wave_tables[121][512]; // 波形テーブル群
-static volatile uint32_t Osc_pitch[4];              // ピッチ設定値
+static uint32_t          Osc_freq_table[121];      // 周波数テーブル
+static Q14               Osc_wave_tables[41][512]; // 波形テーブル群
+static volatile uint32_t Osc_pitch[4];             // ピッチ設定値
 
 static void Osc_init() {
   for (uint32_t pitch = 0; pitch < 121; ++pitch) {
     Osc_freq_table[pitch] =
-      (FA * powf(2, (pitch - 69.0F) / 12)) * (1LL << 32) / FS;
+        (FA * powf(2, (pitch - 69.0F) / 12)) * (1LL << 32) / FS;
   }
 
-  for (uint32_t pitch = 0; pitch < 121; ++pitch) {
+  for (uint32_t pitch3 = 0; pitch3 < 41; ++pitch3) {
     uint32_t harm_max = // 最大倍音次数
-      (23000.0F * (1LL << 32) / FS)
-                          / Osc_freq_table[pitch];
+        (23000.0F * (1LL << 32) / FS) / Osc_freq_table[pitch3 * 3];
     if (harm_max > 127) { harm_max = 127; }
 
     for (uint32_t i = 0; i < 512; ++i) {
       float sum = 0.0F;
       for (uint32_t k = 1; k <= harm_max; ++k) {
-        sum += (2 / PI)
-               * (sinf(2 * PI * k * i / 512) / k);
+        sum += (2 / PI) * (sinf(2 * PI * k * i / 512) / k);
       }
       sum *= 0.25F;
-      Osc_wave_tables[pitch][i] = float2fix(sum,
-                                            14);
+      Osc_wave_tables[pitch3][i] = float2fix(sum, 14);
     }
   }
 }
@@ -47,15 +44,14 @@ static inline Q28 Osc_process(uint32_t voice) {
   static uint32_t phase[4]; // 位相
   phase[voice] += Osc_freq_table[Osc_pitch[voice]];
 
-  Q14* wave_table = Osc_wave_tables[Osc_pitch[voice]];
+  Q14* wave_table = Osc_wave_tables[(Osc_pitch[voice] + 2) / 3];
   uint32_t curr_index = phase[voice] >> 23;
-  uint32_t next_index = (curr_index + 1) &
-                                       0x000001FF;
+  uint32_t next_index = (curr_index + 1) & 0x000001FF;
   Q14 curr_sample = wave_table[curr_index];
   Q14 next_sample = wave_table[next_index];
   Q14 next_weight = (phase[voice] >> 9) & 0x3FFF;
   return (curr_sample << 14) +
-      ((next_sample - curr_sample) * next_weight);
+         ((next_sample - curr_sample) * next_weight);
 }
 //////// フィルタ ////////////////////////////////
 struct F_COEFS { Q28 b0_a0, a1_a0, a2_a0; };
@@ -74,23 +70,18 @@ static void Fil_init() {
       float a0    =  1 + alpha;
       float a1    = -2 * cosf(w0);
       float a2    =  1 - alpha;
-      Fil_table[res][cut].b0_a0 =
-                           float2fix(b0 / a0, 28);
-      Fil_table[res][cut].a1_a0 =
-                           float2fix(a1 / a0, 28);
-      Fil_table[res][cut].a2_a0 =
-                           float2fix(a2 / a0, 28);
+      Fil_table[res][cut].b0_a0 = float2fix(b0 / a0, 28);
+      Fil_table[res][cut].a1_a0 = float2fix(a1 / a0, 28);
+      Fil_table[res][cut].a2_a0 = float2fix(a2 / a0, 28);
     }
   }
 }
-static inline int32_t mul_32_32_h32(int32_t x,
-                                    int32_t y) {
+static inline int32_t mul_32_32_h32(int32_t x, int32_t y) {
   // 32ビット同士の乗算結果の上位32ビット
   int32_t x1 = x >> 16; uint32_t x0 = x & 0xFFFF;
   int32_t y1 = y >> 16; uint32_t y0 = y & 0xFFFF;
   int32_t x0_y1 = x0 * y1;
-  int32_t z = ((x0 * y0) >> 16) +
-               (x1 * y0) + (x0_y1 & 0xFFFF);
+  int32_t z = ((x0 * y0) >> 16) + (x1 * y0) + (x0_y1 & 0xFFFF);
   return (z >> 16) + (x0_y1 >> 16) + (x1 * y1);
 }
 static inline Q28 Fil_process(uint32_t voice, Q28 x0) {
@@ -113,8 +104,7 @@ static inline Q28 Fil_process(uint32_t voice, Q28 x0) {
   return y0;
 }
 //////// アンプ //////////////////////////////////
-static inline int32_t mul_32_16_h32(int32_t x,
-                                    int16_t y) {
+static inline int32_t mul_32_16_h32(int32_t x, int16_t y) {
   // 32ビットと16ビットの乗算結果の上位32ビット
   int32_t x1 = x >> 16; uint32_t x0 = x & 0xFFFF;
   return ((x0 * y) >> 16) + (x1 * y);
@@ -130,8 +120,8 @@ static volatile int32_t EG_gate_on[4]; // EGゲート設定値
 static inline Q14 EG_process(uint32_t voice) {
   static Q14 curr_level[4];                        // レベル現在値
   Q14        targ_level = EG_gate_on[voice] << 14; // レベル目標値
-  curr_level[voice] = targ_level -
-                      (((targ_level - curr_level[voice]) * 255) / 256);
+  curr_level[voice] =
+      targ_level - (((targ_level - curr_level[voice]) * 255) / 256);
   return curr_level[voice];
 }
 //////// PWMオーディオ出力部 /////////////////////
@@ -143,13 +133,11 @@ static inline Q14 EG_process(uint32_t voice) {
 static void pwm_irq_handler();
 static void PWMA_init() {
   gpio_set_function(PWMA_GPIO, GPIO_FUNC_PWM);
-  irq_set_exclusive_handler(PWM_IRQ_WRAP,
-                            pwm_irq_handler);
+  irq_set_exclusive_handler(PWM_IRQ_WRAP, pwm_irq_handler);
   irq_set_enabled(PWM_IRQ_WRAP, true);
   pwm_set_irq_enabled(PWMA_SLICE, true);
   pwm_set_wrap(PWMA_SLICE, PWMA_CYCLE - 1);
-  pwm_set_chan_level(PWMA_SLICE,
-                     PWMA_CHAN, PWMA_CYCLE / 2);
+  pwm_set_chan_level(PWMA_SLICE, PWMA_CHAN, PWMA_CYCLE / 2);
   pwm_set_enabled(PWMA_SLICE, true);
 }
 static inline void PWMA_process(Q28 in) {
@@ -179,12 +167,9 @@ static void pwm_irq_handler() {
                 voice_level[2] + voice_level[3]) >> 2);
 
   uint16_t end_time = pwm_get_counter(PWMA_SLICE);
-  p_time = ((end_time - s_time) + PWMA_CYCLE)
-                                         % PWMA_CYCLE;
-  max_s_time += (s_time > max_s_time) *
-                (s_time - max_s_time);
-  max_p_time += (p_time > max_p_time) *
-                (p_time - max_p_time);
+  p_time = end_time - s_time; // 簡略化
+  max_s_time += (s_time > max_s_time) * (s_time - max_s_time);
+  max_p_time += (p_time > max_p_time) * (p_time - max_p_time);
 }
 int main() {
   set_sys_clock_khz(FCLKSYS / 1000, true);
