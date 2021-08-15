@@ -25,9 +25,10 @@ static void Osc_init() {
         (FA * powf(2, (pitch - 69.0F) / 12)) * (1LL << 32) / FS;
   }
 
+  // TODO: 参照テーブルを追加して、Osc_wave_tablesの重複データを無くしたい
   for (uint32_t pitch4 = 0; pitch4 < 31; ++pitch4) {
     uint32_t harm_max = // 最大倍音次数
-        (23000.0F * (1LL << 32) / FS) / Osc_freq_table[pitch4 << 2];
+        (((FS - 1.0F) / 2) * (1LL << 32) / FS) / Osc_freq_table[pitch4 << 2];
     if (harm_max > 127) { harm_max = 127; }
 
     for (uint32_t i = 0; i < 512; ++i) {
