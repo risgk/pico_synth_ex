@@ -116,21 +116,26 @@ static inline Q28 Fil_process(uint32_t voice, Q28 x0) {
   return y0;
 }
 //////// アンプ //////////////////////////////////
-static volatile int32_t Amp_on[4]; // アンプ設定値
-
 static inline int32_t mul_32_16_h32(int32_t x,
                                     int16_t y) {
   // 32ビットと16ビットの乗算結果の上位32ビット
   int32_t x1 = x >> 16; uint32_t x0 = x & 0xFFFF;
   return ((x0 * y) >> 16) + (x1 * y);
 }
-static inline Q28 Amp_process(uint32_t voice, Q28 in) {
-  static Q14 curr_gain[4];                       // ゲイン現在値
-  Q14        targ_gain    = Amp_on[voice] << 14; // ゲイン目標値
-  curr_gain[voice] = targ_gain -
-                     (((targ_gain - curr_gain[voice]) * 255) / 256);
+static inline Q28 Amp_process(uint32_t voice, Q28 in, Q14 gain_in) {
+  return mul_32_16_h32(in, gain_in) << 2;
+}
+//////// LFO（Low Frequency Oscillator） /////////
+// TODO
+//////// EG（Envelope Generator） ////////////////
+static volatile int32_t EG_gate_on[4]; // EGゲート設定値
 
-  return mul_32_16_h32(in, curr_gain[voice]) << 2;
+static inline Q14 EG_process(uint32_t voice) {
+  static Q14 curr_level[4];                        // レベル現在値
+  Q14        targ_level = EG_gate_on[voice] << 14; // レベル目標値
+  curr_level[voice] = targ_level -
+                      (((targ_level - curr_level[voice]) * 255) / 256);
+  return curr_level[voice];
 }
 //////// PWMオーディオ出力部 /////////////////////
 #define PWMA_GPIO  (28)           // PWM出力するGPIO番号
@@ -164,11 +169,18 @@ static volatile uint16_t max_p_time = 0; // 最大処理時間
 static void pwm_irq_handler() {
   pwm_clear_irq(PWMA_SLICE);
   s_time = pwm_get_counter(PWMA_SLICE);
-  Q28 level_0 = Amp_process(0, Fil_process(0, Osc_process(0)));
-  Q28 level_1 = Amp_process(1, Fil_process(1, Osc_process(1)));
-  Q28 level_2 = Amp_process(2, Fil_process(2, Osc_process(2)));
-  Q28 level_3 = Amp_process(3, Fil_process(3, Osc_process(3)));
-  PWMA_process((level_0 + level_1 + level_2 + level_3) >> 2);
+
+  Q28 voice_level[4];
+  for (uint32_t voice = 0; voice < 4; ++voice) {
+    Q14 eg_out  = EG_process(voice);
+    Q28 osc_out = Osc_process(voice);
+    Q28 fil_out = Fil_process(voice, osc_out);
+    Q28 amp_out = Amp_process(voice, fil_out, eg_out);
+    voice_level[voice] = amp_out;
+  }
+  PWMA_process((voice_level[0] + voice_level[1] +
+                voice_level[2] + voice_level[3]) >> 2);
+
   uint16_t end_time = pwm_get_counter(PWMA_SLICE);
   p_time = ((end_time - s_time) + PWMA_CYCLE)
                                          % PWMA_CYCLE;
@@ -182,10 +194,10 @@ int main() {
   stdio_init_all();
   Osc_init(); Fil_init(); PWMA_init();
 #if 1
-  Osc_pitch[0] = 0; Amp_on[0] = 1; 
-  Osc_pitch[1] = 2; Amp_on[1] = 1; 
-  Osc_pitch[2] = 4; Amp_on[2] = 1; 
-  Osc_pitch[3] = 6; Amp_on[3] = 1; 
+  Osc_pitch[0] = 0; EG_gate_on[0] = 1; 
+  Osc_pitch[1] = 2; EG_gate_on[1] = 1; 
+  Osc_pitch[2] = 4; EG_gate_on[2] = 1; 
+  Osc_pitch[3] = 6; EG_gate_on[3] = 1; 
 #endif
   while (true) {
     switch (getchar_timeout_us(0)) {
@@ -207,10 +219,10 @@ int main() {
     }
     static uint32_t loop_counter = 0; // ループ回数
     if ((++loop_counter & 0xFFFFF) == 0) {
-      printf("p:[%lu,%lu,%lu,%lu], c:%3lu, r:%lu, a:[%ld,%ld,%ld,%ld], ",
+      printf("p:[%lu,%lu,%lu,%lu], g:[%ld,%ld,%ld,%ld], c:%3lu, r:%lu, ",
         Osc_pitch[0], Osc_pitch[1], Osc_pitch[2], Osc_pitch[3],
-        Fil_cut, Fil_res,
-        Amp_on[0], Amp_on[1], Amp_on[2], Amp_on[3]);
+        EG_gate_on[0], EG_gate_on[1], EG_gate_on[2], EG_gate_on[3],
+        Fil_cut, Fil_res);
       printf("start:%4u/%4u, processing:%4u/%4u\n",
         s_time, max_s_time, p_time, max_p_time);
     }
