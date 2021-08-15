@@ -23,8 +23,8 @@ static uint32_t Osc_freq_table[8] = {   // 周波数テーブル
   440.0F * (1LL << 32) / FS,
   493.9F * (1LL << 32) / FS,
   523.3F * (1LL << 32) / FS };
-static Q14 Osc_wave_tables[8][512];     // 波形テーブル群
-static volatile uint32_t Osc_pitch = 0; // ピッチ設定値
+static Q14 Osc_wave_tables[8][512];    // 波形テーブル群
+static volatile uint32_t Osc_pitch[4]; // ピッチ設定値
 
 static void Osc_init() {
   for (uint32_t pitch = 0; pitch < 8; ++pitch) {
@@ -45,17 +45,17 @@ static void Osc_init() {
     }
   }
 }
-static inline Q28 Osc_process() {
-  static uint32_t phase = 0; // 位相
-  phase += Osc_freq_table[Osc_pitch];
+static inline Q28 Osc_process(uint32_t voice) {
+  static uint32_t phase[4]; // 位相
+  phase[voice] += Osc_freq_table[Osc_pitch[voice]];
 
-  Q14* wave_table = Osc_wave_tables[Osc_pitch];
-  uint32_t curr_index = phase >> 23;
+  Q14* wave_table = Osc_wave_tables[Osc_pitch[voice]];
+  uint32_t curr_index = phase[voice] >> 23;
   uint32_t next_index = (curr_index + 1) &
                                        0x000001FF;
   Q14 curr_sample = wave_table[curr_index];
   Q14 next_sample = wave_table[next_index];
-  Q14 next_weight = (phase >> 9) & 0x3FFF;
+  Q14 next_weight = (phase[voice] >> 9) & 0x3FFF;
   return (curr_sample << 14) +
       ((next_sample - curr_sample) * next_weight);
 }
@@ -96,26 +96,27 @@ static inline int32_t mul_32_32_h32(int32_t x,
                (x1 * y0) + (x0_y1 & 0xFFFF);
   return (z >> 16) + (x0_y1 >> 16) + (x1 * y1);
 }
-static inline Q28 Fil_process(Q28 x0) {
-  static uint32_t f_counter = 0;       // フィルタ処理回数
-  static uint32_t curr_cut  = 0;       // カットオフ現在値
-  uint32_t        targ_cut  = Fil_cut; // カットオフ目標値
-  uint32_t delta = ((++f_counter & 0xF) == 0);
-  curr_cut += (curr_cut < targ_cut) * delta;
-  curr_cut -= (curr_cut > targ_cut) * delta;
+static inline Q28 Fil_process(uint32_t voice, Q28 x0) {
+  static uint32_t f_counter[4];       // フィルタ処理回数
+  static uint32_t curr_cut[4];        // カットオフ現在値
+  uint32_t        targ_cut = Fil_cut; // カットオフ目標値
+  uint32_t delta = ((++f_counter[voice] & 0xF) == 0);
+  curr_cut[voice] += (curr_cut[voice] < targ_cut) * delta;
+  curr_cut[voice] -= (curr_cut[voice] > targ_cut) * delta;
   struct F_COEFS* coefs =
-    &Fil_table[Fil_res][curr_cut];
+    &Fil_table[Fil_res][curr_cut[voice]];
 
-  static Q28 x1 = 0, x2 = 0, y1 = 0, y2 = 0;
-  Q28 x3 = x0 + (x1 << 1) + x2;
-  Q28 y0 = mul_32_32_h32(coefs->b0_a0, x3) << 4;
-  y0    -= mul_32_32_h32(coefs->a1_a0, y1) << 4;
-  y0    -= mul_32_32_h32(coefs->a2_a0, y2) << 4;
-  x2 = x1; y2 = y1; x1 = x0; y1 = y0;
+  static Q28 x1[4], x2[4], y1[4], y2[4];
+  Q28 x3 = x0 + (x1[voice] << 1) + x2[voice];
+  Q28 y0 = mul_32_32_h32(coefs->b0_a0, x3)        << 4;
+  y0    -= mul_32_32_h32(coefs->a1_a0, y1[voice]) << 4;
+  y0    -= mul_32_32_h32(coefs->a2_a0, y2[voice]) << 4;
+  x2[voice] = x1[voice]; y2[voice] = y1[voice];
+  x1[voice] = x0;        y1[voice] = y0;
   return y0;
 }
 //////// アンプ //////////////////////////////////
-static volatile int32_t Amp_on = 0; // アンプ設定値
+static volatile int32_t Amp_on[4]; // アンプ設定値
 
 static inline int32_t mul_32_16_h32(int32_t x,
                                     int16_t y) {
@@ -123,13 +124,13 @@ static inline int32_t mul_32_16_h32(int32_t x,
   int32_t x1 = x >> 16; uint32_t x0 = x & 0xFFFF;
   return ((x0 * y) >> 16) + (x1 * y);
 }
-static inline Q28 Amp_process(Q28 in) {
-  static Q14 curr_gain = 0;            // ゲイン現在値
-  Q14        targ_gain = Amp_on << 14; // ゲイン目標値
-  curr_gain = targ_gain -
-          (((targ_gain - curr_gain) * 255) / 256);
+static inline Q28 Amp_process(uint32_t voice, Q28 in) {
+  static Q14 curr_gain[4];                       // ゲイン現在値
+  Q14        targ_gain    = Amp_on[voice] << 14; // ゲイン目標値
+  curr_gain[voice] = targ_gain -
+                     (((targ_gain - curr_gain[voice]) * 255) / 256);
 
-  return mul_32_16_h32(in, curr_gain) << 2;
+  return mul_32_16_h32(in, curr_gain[voice]) << 2;
 }
 //////// PWMオーディオ出力部 /////////////////////
 #define PWMA_GPIO  (28)           // PWM出力するGPIO番号
@@ -163,8 +164,11 @@ static volatile uint16_t max_p_time = 0; // 最大処理時間
 static void pwm_irq_handler() {
   pwm_clear_irq(PWMA_SLICE);
   s_time = pwm_get_counter(PWMA_SLICE);
-  PWMA_process(
-    Amp_process(Fil_process(Osc_process())));
+  Q28 level_0 = Amp_process(0, Fil_process(0, Osc_process(0)));
+  Q28 level_1 = Amp_process(1, Fil_process(1, Osc_process(1)));
+  Q28 level_2 = Amp_process(2, Fil_process(2, Osc_process(2)));
+  Q28 level_3 = Amp_process(3, Fil_process(3, Osc_process(3)));
+  PWMA_process((level_0 + level_1 + level_2 + level_3) >> 2);
   uint16_t end_time = pwm_get_counter(PWMA_SLICE);
   p_time = ((end_time - s_time) + PWMA_CYCLE)
                                          % PWMA_CYCLE;
@@ -177,8 +181,15 @@ int main() {
   set_sys_clock_khz(FCLKSYS / 1000, true);
   stdio_init_all();
   Osc_init(); Fil_init(); PWMA_init();
+#if 1
+  Osc_pitch[0] = 0; Amp_on[0] = 1; 
+  Osc_pitch[1] = 2; Amp_on[1] = 1; 
+  Osc_pitch[2] = 4; Amp_on[2] = 1; 
+  Osc_pitch[3] = 6; Amp_on[3] = 1; 
+#endif
   while (true) {
     switch (getchar_timeout_us(0)) {
+#if 0
     case '1': Osc_pitch = 0; Amp_on = 1; break; // ド
     case '2': Osc_pitch = 1; Amp_on = 1; break; // レ
     case '3': Osc_pitch = 2; Amp_on = 1; break; // ミ
@@ -188,6 +199,7 @@ int main() {
     case '7': Osc_pitch = 6; Amp_on = 1; break; // シ
     case '8': Osc_pitch = 7; Amp_on = 1; break; // ド
     case '0':                Amp_on = 0; break;
+#endif
     case 'z': if (Fil_cut > 0)   { --Fil_cut; } break;
     case 'x': if (Fil_cut < 120) { ++Fil_cut; } break;
     case 'n': if (Fil_res > 0)   { --Fil_res; } break;
@@ -195,10 +207,12 @@ int main() {
     }
     static uint32_t loop_counter = 0; // ループ回数
     if ((++loop_counter & 0xFFFFF) == 0) {
-      printf("p:%lu, c:%3lu, r:%lu, a:%ld, ",
-                 Osc_pitch, Fil_cut, Fil_res, Amp_on);
+      printf("p:[%lu,%lu,%lu,%lu], c:%3lu, r:%lu, a:[%ld,%ld,%ld,%ld], ",
+        Osc_pitch[0], Osc_pitch[1], Osc_pitch[2], Osc_pitch[3],
+        Fil_cut, Fil_res,
+        Amp_on[0], Amp_on[1], Amp_on[2], Amp_on[3]);
       printf("start:%4u/%4u, processing:%4u/%4u\n",
-              s_time, max_s_time, p_time, max_p_time);
+        s_time, max_s_time, p_time, max_p_time);
     }
   }
 }
