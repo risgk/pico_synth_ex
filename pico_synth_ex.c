@@ -242,13 +242,13 @@ int main() {
     }
     static uint32_t loop_counter = 0; // ループ回数
     if ((++loop_counter & 0xFFFFF) == 0) {
-      printf("pitch:[%3lu,%3lu,%3lu,%3lu], gate:[%ld,%ld,%ld,%ld], oct:%+ld, ",
+      printf("pitch:[%3lu,%3lu,%3lu,%3lu], gate:[%ld,%ld,%ld,%ld], oct:%+ld,\n",
           voice_pitch[0], voice_pitch[1], voice_pitch[2], voice_pitch[3],
           voice_gate[0], voice_gate[1], voice_gate[2], voice_gate[3],
           octave_shift);
-      printf("cut:%3lu, res:%lu, ",
+      printf("cut:%3lu, res:%lu,\n",
           Fil_cut, Fil_res);
-      printf("start:%4u/%4u, processing:%4u/%4u\n",
+      printf("start:%4u/%4u, processing:%4u/%4u\n\n",
           s_time, max_s_time, p_time, max_p_time);
     }
   }
