@@ -19,6 +19,11 @@ typedef int16_t Q14; // 小数部14ビットの符号付き固定小数点数
 static uint32_t Osc_freq_table[121];      // 周波数テーブル
 static Q14      Osc_wave_tables[31][512]; // 波形テーブル群
 
+static volatile int32_t Osc_wav = 0; // 出力波形設定値
+static volatile int32_t Osc_co2 = 0; // オシレータ2ピッチ粗設定値
+static volatile int32_t Osc_fi2 = 0; // オシレータ2ピッチ詳細設定値
+static volatile int32_t Osc_mix = 0; // オシレータ1／2ミックス設定値
+
 static void Osc_init() {
   for (uint32_t pitch = 0; pitch < 121; ++pitch) {
     uint32_t freq = (FA * powf(2, (pitch - 69.0F) / 12)) * (1LL << 32) / FS;
@@ -43,17 +48,17 @@ static void Osc_init() {
   }
 }
 
-static inline Q28 Osc_process(uint32_t voice, uint32_t pitch, Q14 pitch_mod) {
+static inline Q28 Osc_process(uint32_t no, uint32_t pitch, Q14 pitch_mod) {
   static uint32_t phase[4]; // 位相
-  phase[voice] += Osc_freq_table[pitch] + (voice * 256); // 周波数を少しずらす
+  phase[no] += Osc_freq_table[pitch] + (no * 256); // 周波数を少しずらす
 
   uint32_t pitch4 = (pitch + 3) >> 2;
   Q14* wave_table = Osc_wave_tables[pitch4];
-  uint32_t curr_index = phase[voice] >> 23;
+  uint32_t curr_index = phase[no] >> 23;
   uint32_t next_index = (curr_index + 1) & 0x000001FF;
   Q14 curr_sample = wave_table[curr_index];
   Q14 next_sample = wave_table[next_index];
-  Q14 next_weight = (phase[voice] >> 9) & 0x3FFF;
+  Q14 next_weight = (phase[no] >> 9) & 0x3FFF;
   return (curr_sample << 14) +
          ((next_sample - curr_sample) * next_weight);
 }
@@ -62,9 +67,9 @@ static inline Q28 Osc_process(uint32_t voice, uint32_t pitch, Q14 pitch_mod) {
 struct F_COEFS { Q28 b0_a0, a1_a0, a2_a0; };
 struct F_COEFS Fil_table[8][481]; // フィルタ係数群テーブル
 
-static volatile int32_t Fil_cut         = 480; // カットオフ設定値
-static volatile int32_t Fil_res         = 0;   // レゾナンス設定値
-static volatile int32_t Fil_cut_mod_amt = 0;   // モジュレーション量設定値
+static volatile int32_t Fil_cut = 120; // カットオフ設定値
+static volatile int32_t Fil_res = 0;   // レゾナンス設定値
+static volatile int32_t Fil_mod = 0;   // カットオフ変調量設定値
 
 static void Fil_init() {
   for (uint32_t res = 0; res < 8; ++res) {
@@ -93,30 +98,30 @@ static inline int32_t mul_32_32_h32(int32_t x, int32_t y) {
   return (z >> 16) + (x0_y1 >> 16) + (x1 * y1);
 }
 
-static inline Q28 Fil_process(uint32_t voice, Q28 x0, Q14 cut_mod) {
-  static uint32_t f_counter[4]; // フィルタ処理回数
-  static uint32_t curr_cut[4];  // カットオフ現在値
-  int32_t targ_cut = Fil_cut;   // カットオフ目標値
-  targ_cut += (Fil_cut_mod_amt * cut_mod) >> 14;
+static inline Q28 Fil_process(uint32_t no, Q28 x0, Q14 cut_mod) {
+  static uint32_t f_counter[4];    // フィルタ処理回数
+  static uint32_t curr_cut[4];     // カットオフ現在値
+  int32_t targ_cut = Fil_cut << 2; // カットオフ目標値（設定値の4倍）
+  targ_cut += (Fil_mod * cut_mod) >> (14 - 2);
   targ_cut += (targ_cut < 0)   * (0 - targ_cut);
   targ_cut -= (targ_cut > 480) * (targ_cut - 480);
 #if 1
-  curr_cut[voice] += (curr_cut[voice] < targ_cut);
-  curr_cut[voice] -= (curr_cut[voice] > targ_cut);
+  curr_cut[no] += (curr_cut[no] < targ_cut);
+  curr_cut[no] -= (curr_cut[no] > targ_cut);
 #else
-  uint32_t delta = ((++f_counter[voice] & 0x3) == 0);
-  curr_cut[voice] += (curr_cut[voice] < targ_cut) * delta;
-  curr_cut[voice] -= (curr_cut[voice] > targ_cut) * delta;
+  uint32_t delta = ((++f_counter[no] & 0x3) == 0);
+  curr_cut[no] += (curr_cut[no] < targ_cut) * delta;
+  curr_cut[no] -= (curr_cut[no] > targ_cut) * delta;
 #endif
-  struct F_COEFS* coefs = &Fil_table[Fil_res][curr_cut[voice]];
+  struct F_COEFS* coefs = &Fil_table[Fil_res][curr_cut[no]];
 
   static Q28 x1[4], x2[4], y1[4], y2[4];
-  Q28 x3 = x0 + (x1[voice] << 1) + x2[voice];
+  Q28 x3 = x0 + (x1[no] << 1) + x2[no];
   Q28 y0 = mul_32_32_h32(coefs->b0_a0, x3)        << 4;
-  y0    -= mul_32_32_h32(coefs->a1_a0, y1[voice]) << 4;
-  y0    -= mul_32_32_h32(coefs->a2_a0, y2[voice]) << 4;
-  x2[voice] = x1[voice]; y2[voice] = y1[voice];
-  x1[voice] = x0;        y1[voice] = y0;
+  y0    -= mul_32_32_h32(coefs->a1_a0, y1[no]) << 4;
+  y0    -= mul_32_32_h32(coefs->a2_a0, y2[no]) << 4;
+  x2[no] = x1[no]; y2[no] = y1[no];
+  x1[no] = x0;        y1[no] = y0;
   return y0;
 }
 
@@ -127,25 +132,34 @@ static inline int32_t mul_32_16_h32(int32_t x, int16_t y) {
   return ((x0 * y) >> 16) + (x1 * y);
 }
 
-static inline Q28 Amp_process(uint32_t voice, Q28 in, Q14 gain) {
+static inline Q28 Amp_process(uint32_t no, Q28 in, Q14 gain) {
   return mul_32_16_h32(in, gain) << 2;
 }
 
-//////// LFO（Low Frequency Oscillator） /////////
-// TODO
-
 //////// EG（Envelope Generator） ////////////////
-static inline Q14 EG_process(uint32_t voice, int32_t gate) {
+static volatile int32_t EG_att = 0;  // アタック・タイム設定値
+static volatile int32_t EG_dec = 0;  // ディケイ・タイム設定値
+static volatile int32_t EG_sus = 64; // サスティン・レベル設定値
+
+static inline Q14 EG_process(uint32_t no, int32_t gate) {
   static Q14 curr_level[4];           // レベル現在値
   Q14        targ_level = gate << 14; // レベル目標値
 #if 1
-  curr_level[voice] =
-      targ_level - (((targ_level - curr_level[voice]) * 16368) / 16384);
+  curr_level[no] =
+      targ_level - (((targ_level - curr_level[no]) * 16368) / 16384);
 #else
-  curr_level[voice] =
-      targ_level - (((targ_level - curr_level[voice]) * 255) / 256);
+  curr_level[no] =
+      targ_level - (((targ_level - curr_level[no]) * 255) / 256);
 #endif
-  return curr_level[voice];
+  return curr_level[no];
+}
+
+//////// LFO（Low Frequency Oscillator） /////////
+static volatile int32_t LFO_dep = 0;  // 深さ設定値
+static volatile int32_t LFO_rat = 32; // 速さ設定値
+
+static inline Q14 LFO_process(uint32_t no) {
+  return 0; // TODO
 }
 
 //////// PWMオーディオ出力部 /////////////////////
@@ -180,19 +194,19 @@ static volatile uint16_t max_p_time = 0; // 最大処理時間
 
 static volatile int32_t  voice_gate[4];  // ゲート制御値（ボイス毎）
 static volatile uint32_t voice_pitch[4]; // ピッチ制御値（ボイス毎）
-static volatile int32_t  octave_shift;   // オクターブシフト値
+static volatile int32_t  octave_shift;   // 鳴らす音のオクターブシフト量
 
 static void pwm_irq_handler() {
   pwm_clear_irq(PWMA_SLICE);
   s_time = pwm_get_counter(PWMA_SLICE);
 
   Q28 voice_out[4];
-  for (uint32_t voice = 0; voice < 4; ++voice) {
-    Q14 eg_out = EG_process(voice, voice_gate[voice]);
-    Q28 osc_out = Osc_process(voice, voice_pitch[voice], ONE_Q14);
-    Q28 fil_out = Fil_process(voice, osc_out, eg_out);
-    Q28 amp_out = Amp_process(voice, fil_out, eg_out);
-    voice_out[voice] = amp_out;
+  for (uint32_t no = 0; no < 4; ++no) {
+    Q14 eg_out = EG_process(no, voice_gate[no]);
+    Q28 osc_out = Osc_process(no, voice_pitch[no], ONE_Q14);
+    Q28 fil_out = Fil_process(no, osc_out, eg_out);
+    Q28 amp_out = Amp_process(no, fil_out, eg_out);
+    voice_out[no] = amp_out;
   }
   PWMA_process((voice_out[0] + voice_out[1] +
                 voice_out[2] + voice_out[3]) >> 2);
@@ -218,11 +232,11 @@ static inline void note_on_off(uint32_t key)
 
 static inline void all_notes_off()
 {
-  for (uint32_t voice = 0; voice < 4; ++voice) { voice_gate[voice] = 0; }
+  for (uint32_t no = 0; no < 4; ++no) { voice_gate[no] = 0; }
 }
 
 int main() {
-  for (uint32_t voice = 0; voice < 4; ++voice) { voice_pitch[voice] = 60; }
+  for (uint32_t no = 0; no < 4; ++no) { voice_pitch[no] = 60; }
 #if 1
   note_on_off(60); note_on_off(64); note_on_off(67); note_on_off(71);
 #endif
@@ -246,25 +260,53 @@ int main() {
     case '7': note_on_off(70); break; // ラ＃
     case 'u': note_on_off(71); break; // シ
     case 'i': note_on_off(72); break; // ド
+
     case '1': if (octave_shift > -5) { --octave_shift; } break;
-    case '9': if (octave_shift < 4)  { ++octave_shift; } break;
+    case '9': if (octave_shift < +4) { ++octave_shift; } break;
     case '0': all_notes_off(); break;
-    case 'G': if (Fil_cut         > 0)    { Fil_cut         -= 4; } break;
-    case 'g': if (Fil_cut         < 480)  { Fil_cut         += 4; } break;
-    case 'H': if (Fil_res         > 0)    { Fil_res         -= 1; } break;
-    case 'h': if (Fil_res         < 7)    { Fil_res         += 1; } break;
-    case 'J': if (Fil_cut_mod_amt > -240) { Fil_cut_mod_amt -= 4; } break;
-    case 'j': if (Fil_cut_mod_amt < +240) { Fil_cut_mod_amt += 4; } break;
+
+    case 'A': if (Osc_wav > 0)   { --Osc_wav; } break;
+    case 'a': if (Osc_wav < 1)   { ++Osc_wav; } break;
+    case 'S': if (Osc_co2 > -48) { --Osc_co2; } break;
+    case 's': if (Osc_co2 < +48) { ++Osc_co2; } break;
+    case 'D': if (Osc_fi2 > -32) { --Osc_fi2; } break;
+    case 'd': if (Osc_fi2 < +32) { ++Osc_fi2; } break;
+    case 'F': if (Osc_mix > 0)   { --Osc_mix; } break;
+    case 'f': if (Osc_mix < 64)  { ++Osc_mix; } break;
+
+    case 'G': if (Fil_cut > 0)   { --Fil_cut; } break;
+    case 'g': if (Fil_cut < 120) { ++Fil_cut; } break;
+    case 'H': if (Fil_res > 0)   { --Fil_res; } break;
+    case 'h': if (Fil_res < 7)   { ++Fil_res; } break;
+    case 'J': if (Fil_mod > -60) { --Fil_mod; } break;
+    case 'j': if (Fil_mod < +60) { ++Fil_mod; } break;
+
+    case 'Z': if (EG_att  > 0)   { --EG_att;  } break;
+    case 'z': if (EG_att  < 64)  { ++EG_att;  } break;
+    case 'X': if (EG_dec  > 0)   { --EG_dec;  } break;
+    case 'x': if (EG_dec  < 64)  { ++EG_dec;  } break;
+    case 'C': if (EG_sus  > 0)   { --EG_sus;  } break;
+    case 'c': if (EG_sus  < 64)  { ++EG_sus;  } break;
+
+    case 'B': if (LFO_rat > 0)   { --LFO_rat; } break;
+    case 'b': if (LFO_rat < 64)  { ++LFO_rat; } break;
+    case 'N': if (LFO_dep > 0)   { --LFO_dep; } break;
+    case 'n': if (LFO_dep < 64)  { ++LFO_dep; } break;
     }
     static uint32_t loop_counter = 0; // ループ回数
     if ((++loop_counter & 0xFFFFF) == 0) {
-      printf("pitch:[%3lu,%3lu,%3lu,%3lu], gate:[%ld,%ld,%ld,%ld], oct:%+ld,\n",
+      printf("Pitch: [%3lu, %3lu, %3lu, %3lu], Gate: [%ld, %ld, %ld, %ld]\n",
           voice_pitch[0], voice_pitch[1], voice_pitch[2], voice_pitch[3],
-          voice_gate[0], voice_gate[1], voice_gate[2], voice_gate[3],
-          octave_shift);
-      printf("cut:%3ld, res:%ld, cut_mod_amt:%+3ld,\n",
-          Fil_cut, Fil_res, Fil_cut_mod_amt);
-      printf("start:%4u/%4u, processing:%4u/%4u\n\n",
+          voice_gate[0], voice_gate[1], voice_gate[2], voice_gate[3]);
+      printf("Octave: %+ld\n", octave_shift);
+      printf("Osc Wave: %1ld, Coarse2: %+2ld, Fine2: %+2ld, Mix: %2ld\n",
+          Osc_wav, Osc_co2, Osc_fi2, Osc_mix);
+      printf("Fil Cutoff: %3ld, Resonance: %1ld, EG Amount: %+2ld\n",
+          Fil_cut, Fil_res, Fil_mod);
+      printf("EG  Attack: %2ld, Decay: %2ld, Sustain: %2ld\n",
+          EG_att, EG_dec, EG_sus);
+      printf("LFO Depth: %2ld, Rate: %2ld\n", LFO_dep, LFO_rat);
+      printf("Start time: %4u/%4u, Processing time: %4u/%4u\n\n",
           s_time, max_s_time, p_time, max_p_time);
     }
   }
