@@ -66,7 +66,7 @@ static volatile uint32_t Fil_cut = 120; // カットオフ設定値
 static volatile uint32_t Fil_res = 0;   // レゾナンス設定値
 
 static void Fil_init() {
-  for (uint32_t res = 0; res < 6; ++res) {
+  for (uint32_t res = 0; res < 8; ++res) {
     for (uint32_t cut = 0; cut < 121; ++cut) {
       float f0    = 19912.1F
                    * powf(2, (cut - 120.0F) / 12);
@@ -215,7 +215,7 @@ int main() {
     case 'z': if (Fil_cut > 0)   { --Fil_cut; } break;
     case 'x': if (Fil_cut < 120) { ++Fil_cut; } break;
     case 'n': if (Fil_res > 0)   { --Fil_res; } break;
-    case 'm': if (Fil_res < 5)   { ++Fil_res; } break;
+    case 'm': if (Fil_res < 7)   { ++Fil_res; } break;
     }
     static uint32_t loop_counter = 0; // ループ回数
     if ((++loop_counter & 0xFFFFF) == 0) {
