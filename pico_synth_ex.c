@@ -16,7 +16,7 @@ typedef int16_t Q14; // 小数部14ビットの符号付き固定小数点数
 #define FA      (440.0F)    // 基準周波数（Hz）
 //////// オシレータ //////////////////////////////
 static uint32_t          Osc_freq_table[121];      // 周波数テーブル
-static Q14               Osc_wave_tables[41][512]; // 波形テーブル群
+static Q14               Osc_wave_tables[31][512]; // 波形テーブル群
 static volatile uint32_t Osc_pitch[4];             // ピッチ設定値
 
 static void Osc_init() {
@@ -25,9 +25,9 @@ static void Osc_init() {
         (FA * powf(2, (pitch - 69.0F) / 12)) * (1LL << 32) / FS;
   }
 
-  for (uint32_t pitch3 = 0; pitch3 < 41; ++pitch3) {
+  for (uint32_t pitch4 = 0; pitch4 < 31; ++pitch4) {
     uint32_t harm_max = // 最大倍音次数
-        (23000.0F * (1LL << 32) / FS) / Osc_freq_table[pitch3 * 3];
+        (23000.0F * (1LL << 32) / FS) / Osc_freq_table[pitch4 << 2];
     if (harm_max > 127) { harm_max = 127; }
 
     for (uint32_t i = 0; i < 512; ++i) {
@@ -36,7 +36,7 @@ static void Osc_init() {
         sum += (2 / PI) * (sinf(2 * PI * k * i / 512) / k);
       }
       sum *= 0.25F;
-      Osc_wave_tables[pitch3][i] = float2fix(sum, 14);
+      Osc_wave_tables[pitch4][i] = float2fix(sum, 14);
     }
   }
 }
@@ -44,7 +44,7 @@ static inline Q28 Osc_process(uint32_t voice) {
   static uint32_t phase[4]; // 位相
   phase[voice] += Osc_freq_table[Osc_pitch[voice]];
 
-  Q14* wave_table = Osc_wave_tables[(Osc_pitch[voice] + 2) / 3];
+  Q14* wave_table = Osc_wave_tables[(Osc_pitch[voice] + 3) >> 2];
   uint32_t curr_index = phase[voice] >> 23;
   uint32_t next_index = (curr_index + 1) & 0x000001FF;
   Q14 curr_sample = wave_table[curr_index];
