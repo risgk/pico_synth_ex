@@ -21,8 +21,9 @@ static Q14               Osc_wave_tables[31][512]; // 波形テーブル群
 
 static void Osc_init() {
   for (uint32_t pitch = 0; pitch < 121; ++pitch) {
-    Osc_freq_table[pitch] =
-        (FA * powf(2, (pitch - 69.0F) / 12)) * (1LL << 32) / FS;
+    uint32_t freq = (FA * powf(2, (pitch - 69.0F) / 12)) * (1LL << 32) / FS;
+    freq = ((freq >> 4) << 4) + 7; // 少し半端な値にする
+    Osc_freq_table[pitch] = freq;
   }
 
   // TODO: 参照テーブルを追加して、Osc_wave_tablesの重複データを無くしたい
@@ -165,7 +166,7 @@ static volatile uint16_t max_p_time = 0; // 最大処理時間
 
 static volatile int32_t  voice_gate[4];  // ゲート制御値（ボイス毎）
 static volatile uint32_t voice_pitch[4]; // ピッチ制御値（ボイス毎）
-static volatile int32_t  octave_shift;   // オクターブシフト値
+static volatile int32_t  octave_shift;   // オクターブシフト量
 
 static void pwm_irq_handler() {
   pwm_clear_irq(PWMA_SLICE);
@@ -191,57 +192,31 @@ static void pwm_irq_handler() {
 static inline void note_on_off(uint32_t key)
 {
   uint32_t pitch = key + (octave_shift * 12);
-
-  if      (voice_pitch[0] == pitch) {
-    voice_gate[0] = (voice_gate[0] == 0);
-  }
-  else if (voice_pitch[1] == pitch) {
-    voice_gate[1] = (voice_gate[1] == 0);
-  }
-  else if (voice_pitch[2] == pitch) {
-    voice_gate[2] = (voice_gate[2] == 0);
-  }
-  else if (voice_pitch[3] == pitch) {
-    voice_gate[3] = (voice_gate[3] == 0);
-  }
-  else if (voice_gate[0] == 0) {
-    voice_pitch[0] = pitch;
-    voice_gate[0] = 1;
-  }
-  else if (voice_gate[1] == 0) {
-    voice_pitch[1] = pitch;
-    voice_gate[1] = 1;
-  }
-  else if (voice_gate[2] == 0) {
-    voice_pitch[2] = pitch;
-    voice_gate[2] = 1;
-  }
-  else {
-    voice_pitch[3] = pitch;
-    voice_gate[3] = 1;
-  }
+  if      (voice_pitch[0] == pitch) { voice_gate[0] = (voice_gate[0] == 0); }
+  else if (voice_pitch[1] == pitch) { voice_gate[1] = (voice_gate[1] == 0); }
+  else if (voice_pitch[2] == pitch) { voice_gate[2] = (voice_gate[2] == 0); }
+  else if (voice_pitch[3] == pitch) { voice_gate[3] = (voice_gate[3] == 0); }
+  else if (voice_gate[0] == 0) { voice_pitch[0] = pitch; voice_gate[0] = 1; }
+  else if (voice_gate[1] == 0) { voice_pitch[1] = pitch; voice_gate[1] = 1; }
+  else if (voice_gate[2] == 0) { voice_pitch[2] = pitch; voice_gate[2] = 1; }
+  else                         { voice_pitch[3] = pitch; voice_gate[3] = 1; }
 }
 
 static inline void all_notes_off()
 {
-  for (uint32_t voice = 0; voice < 4; ++voice) {
-    voice_gate[voice] = 0;
-    voice_pitch[voice] = 60;
-  }
+  for (uint32_t voice = 0; voice < 4; ++voice) { voice_gate[voice] = 0; }
 }
 
 int main() {
-  all_notes_off();
+  for (uint32_t voice = 0; voice < 4; ++voice) { voice_pitch[voice] = 60; }
 #if 1
-  note_on_off(60);
-  note_on_off(64);
-  note_on_off(67);
-  note_on_off(71);
+  note_on_off(60); note_on_off(64); note_on_off(67); note_on_off(71);
 #endif
 
   set_sys_clock_khz(FCLKSYS / 1000, true);
   stdio_init_all();
   Osc_init(); Fil_init(); PWMA_init();
+
   while (true) {
     switch (getchar_timeout_us(0)) {
     case 'q': note_on_off(60); break; // ド
@@ -267,12 +242,11 @@ int main() {
     }
     static uint32_t loop_counter = 0; // ループ回数
     if ((++loop_counter & 0xFFFFF) == 0) {
-
-      printf("p:[%3lu,%3lu,%3lu,%3lu], g:[%ld,%ld,%ld,%ld], o:%+ld, ",
+      printf("pitch:[%3lu,%3lu,%3lu,%3lu], gate:[%ld,%ld,%ld,%ld], oct:%+ld, ",
           voice_pitch[0], voice_pitch[1], voice_pitch[2], voice_pitch[3],
           voice_gate[0], voice_gate[1], voice_gate[2], voice_gate[3],
           octave_shift);
-      printf("c:%3lu, r:%lu, ",
+      printf("cut:%3lu, res:%lu, ",
           Fil_cut, Fil_res);
       printf("start:%4u/%4u, processing:%4u/%4u\n",
           s_time, max_s_time, p_time, max_p_time);
