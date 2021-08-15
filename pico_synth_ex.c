@@ -13,21 +13,19 @@ typedef int16_t Q14; // 小数部14ビットの符号付き固定小数点数
 #define PI      ((float) M_PI)    // float型の円周率
 #define FCLKSYS (120000000) // システムクロック周波数（Hz）
 #define FS      (48000)     // サンプリング周波数（Hz）
+#define FA      (440.0F)    // 基準周波数（Hz）
 //////// オシレータ //////////////////////////////
-static uint32_t Osc_freq_table[8] = {   // 周波数テーブル
-  261.6F * (1LL << 32) / FS,
-  293.7F * (1LL << 32) / FS,
-  329.6F * (1LL << 32) / FS,
-  349.2F * (1LL << 32) / FS,
-  392.0F * (1LL << 32) / FS,
-  440.0F * (1LL << 32) / FS,
-  493.9F * (1LL << 32) / FS,
-  523.3F * (1LL << 32) / FS };
-static Q14 Osc_wave_tables[8][512];    // 波形テーブル群
-static volatile uint32_t Osc_pitch[4]; // ピッチ設定値
+static uint32_t          Osc_freq_table[121];       // 周波数テーブル
+static Q14               Osc_wave_tables[121][512]; // 波形テーブル群
+static volatile uint32_t Osc_pitch[4];              // ピッチ設定値
 
 static void Osc_init() {
-  for (uint32_t pitch = 0; pitch < 8; ++pitch) {
+  for (uint32_t pitch = 0; pitch < 121; ++pitch) {
+    Osc_freq_table[pitch] =
+      (FA * powf(2, (pitch - 69.0F) / 12)) * (1LL << 32) / FS;
+  }
+
+  for (uint32_t pitch = 0; pitch < 121; ++pitch) {
     uint32_t harm_max = // 最大倍音次数
       (23000.0F * (1LL << 32) / FS)
                           / Osc_freq_table[pitch];
@@ -61,15 +59,14 @@ static inline Q28 Osc_process(uint32_t voice) {
 }
 //////// フィルタ ////////////////////////////////
 struct F_COEFS { Q28 b0_a0, a1_a0, a2_a0; };
-struct F_COEFS Fil_table[6][121]; // フィルタ係数群テーブル
+struct F_COEFS Fil_table[8][121]; // フィルタ係数群テーブル
 static volatile uint32_t Fil_cut = 120; // カットオフ設定値
 static volatile uint32_t Fil_res = 0;   // レゾナンス設定値
 
 static void Fil_init() {
   for (uint32_t res = 0; res < 8; ++res) {
     for (uint32_t cut = 0; cut < 121; ++cut) {
-      float f0    = 19912.1F
-                   * powf(2, (cut - 120.0F) / 12);
+      float f0    = FA * powf(2, (cut - 54.0F) / 12);
       float w0    = 2 * PI * f0 / FS;
       float q     = powf(sqrtf(2), res - 1.0F);
       float alpha = sinf(w0) / (2 * q);
@@ -194,10 +191,10 @@ int main() {
   stdio_init_all();
   Osc_init(); Fil_init(); PWMA_init();
 #if 1
-  Osc_pitch[0] = 0; EG_gate_on[0] = 1; 
-  Osc_pitch[1] = 2; EG_gate_on[1] = 1; 
-  Osc_pitch[2] = 4; EG_gate_on[2] = 1; 
-  Osc_pitch[3] = 6; EG_gate_on[3] = 1; 
+  Osc_pitch[0] = 60; EG_gate_on[0] = 1; 
+  Osc_pitch[1] = 64; EG_gate_on[1] = 1; 
+  Osc_pitch[2] = 67; EG_gate_on[2] = 1; 
+  Osc_pitch[3] = 71; EG_gate_on[3] = 1; 
 #endif
   while (true) {
     switch (getchar_timeout_us(0)) {
@@ -219,7 +216,7 @@ int main() {
     }
     static uint32_t loop_counter = 0; // ループ回数
     if ((++loop_counter & 0xFFFFF) == 0) {
-      printf("p:[%lu,%lu,%lu,%lu], g:[%ld,%ld,%ld,%ld], c:%3lu, r:%lu, ",
+      printf("p:[%3lu,%3lu,%3lu,%3lu], g:[%ld,%ld,%ld,%ld], c:%3lu, r:%lu, ",
         Osc_pitch[0], Osc_pitch[1], Osc_pitch[2], Osc_pitch[3],
         EG_gate_on[0], EG_gate_on[1], EG_gate_on[2], EG_gate_on[3],
         Fil_cut, Fil_res);
