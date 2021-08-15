@@ -44,7 +44,7 @@ static void Osc_init() {
 
 static inline Q28 Osc_process(uint32_t voice, uint32_t pitch) {
   static uint32_t phase[4]; // 位相
-  phase[voice] += Osc_freq_table[pitch];
+  phase[voice] += Osc_freq_table[pitch] + (voice * 256); // 周波数を少しずらす
 
   uint32_t pitch4 = (pitch + 3) >> 2;
   Q14* wave_table = Osc_wave_tables[pitch4];
@@ -98,8 +98,7 @@ static inline Q28 Fil_process(uint32_t voice, Q28 x0) {
   uint32_t delta = ((++f_counter[voice] & 0xF) == 0);
   curr_cut[voice] += (curr_cut[voice] < targ_cut) * delta;
   curr_cut[voice] -= (curr_cut[voice] > targ_cut) * delta;
-  struct F_COEFS* coefs =
-    &Fil_table[Fil_res][curr_cut[voice]];
+  struct F_COEFS* coefs = &Fil_table[Fil_res][curr_cut[voice]];
 
   static Q28 x1[4], x2[4], y1[4], y2[4];
   Q28 x3 = x0 + (x1[voice] << 1) + x2[voice];
@@ -126,9 +125,9 @@ static inline Q28 Amp_process(uint32_t voice, Q28 in, Q14 gain_in) {
 // TODO
 
 //////// EG（Envelope Generator） ////////////////
-static inline Q14 EG_process(uint32_t voice, int32_t gate_on) {
-  static Q14 curr_level[4];              // レベル現在値
-  Q14        targ_level = gate_on << 14; // レベル目標値
+static inline Q14 EG_process(uint32_t voice, int32_t gate) {
+  static Q14 curr_level[4];           // レベル現在値
+  Q14        targ_level = gate << 14; // レベル目標値
   curr_level[voice] =
       targ_level - (((targ_level - curr_level[voice]) * 255) / 256);
   return curr_level[voice];
@@ -164,8 +163,9 @@ static volatile uint16_t max_s_time = 0; // 最大開始時間
 static volatile uint16_t p_time     = 0; // 処理時間
 static volatile uint16_t max_p_time = 0; // 最大処理時間
 
-static volatile uint32_t voice_pitch[4];   // ピッチ制御値（ボイス毎）
-static volatile int32_t  voice_gate_on[4]; // ゲートOn制御値（ボイス毎）
+static volatile int32_t  voice_gate[4];  // ゲート制御値（ボイス毎）
+static volatile uint32_t voice_pitch[4]; // ピッチ制御値（ボイス毎）
+static volatile int32_t  octave_shift;   // オクターブシフト値
 
 static void pwm_irq_handler() {
   pwm_clear_irq(PWMA_SLICE);
@@ -173,7 +173,7 @@ static void pwm_irq_handler() {
 
   Q28 voice_level[4];
   for (uint32_t voice = 0; voice < 4; ++voice) {
-    Q14 eg_out  = EG_process(voice, voice_gate_on[voice]);
+    Q14 eg_out = EG_process(voice, voice_gate[voice]);
     Q28 osc_out = Osc_process(voice, voice_pitch[voice]);
     Q28 fil_out = Fil_process(voice, osc_out);
     Q28 amp_out = Amp_process(voice, fil_out, eg_out);
@@ -188,29 +188,78 @@ static void pwm_irq_handler() {
   max_p_time += (p_time > max_p_time) * (p_time - max_p_time);
 }
 
+static inline void note_on_off(uint32_t key)
+{
+  uint32_t pitch = key + (octave_shift * 12);
+
+  if      (voice_pitch[0] == pitch) {
+    voice_gate[0] = (voice_gate[0] == 0);
+  }
+  else if (voice_pitch[1] == pitch) {
+    voice_gate[1] = (voice_gate[1] == 0);
+  }
+  else if (voice_pitch[2] == pitch) {
+    voice_gate[2] = (voice_gate[2] == 0);
+  }
+  else if (voice_pitch[3] == pitch) {
+    voice_gate[3] = (voice_gate[3] == 0);
+  }
+  else if (voice_gate[0] == 0) {
+    voice_pitch[0] = pitch;
+    voice_gate[0] = 1;
+  }
+  else if (voice_gate[1] == 0) {
+    voice_pitch[1] = pitch;
+    voice_gate[1] = 1;
+  }
+  else if (voice_gate[2] == 0) {
+    voice_pitch[2] = pitch;
+    voice_gate[2] = 1;
+  }
+  else {
+    voice_pitch[3] = pitch;
+    voice_gate[3] = 1;
+  }
+}
+
+static inline void all_notes_off()
+{
+  for (uint32_t voice = 0; voice < 4; ++voice) {
+    voice_gate[voice] = 0;
+    voice_pitch[voice] = 60;
+  }
+}
+
 int main() {
+  all_notes_off();
+#if 1
+  note_on_off(60);
+  note_on_off(64);
+  note_on_off(67);
+  note_on_off(71);
+#endif
+
   set_sys_clock_khz(FCLKSYS / 1000, true);
   stdio_init_all();
   Osc_init(); Fil_init(); PWMA_init();
-#if 1
-  voice_pitch[0] = 60; voice_gate_on[0] = 1; 
-  voice_pitch[1] = 64; voice_gate_on[1] = 1; 
-  voice_pitch[2] = 67; voice_gate_on[2] = 1; 
-  voice_pitch[3] = 71; voice_gate_on[3] = 1; 
-#endif
   while (true) {
     switch (getchar_timeout_us(0)) {
-#if 0
-    case '1': voice_pitch = 0; Amp_on = 1; break; // ド
-    case '2': voice_pitch = 1; Amp_on = 1; break; // レ
-    case '3': voice_pitch = 2; Amp_on = 1; break; // ミ
-    case '4': voice_pitch = 3; Amp_on = 1; break; // ファ
-    case '5': voice_pitch = 4; Amp_on = 1; break; // ソ
-    case '6': voice_pitch = 5; Amp_on = 1; break; // ラ
-    case '7': voice_pitch = 6; Amp_on = 1; break; // シ
-    case '8': voice_pitch = 7; Amp_on = 1; break; // ド
-    case '0':                Amp_on = 0; break;
-#endif
+    case 'q': note_on_off(60); break; // ド
+    case '2': note_on_off(61); break; // ド＃
+    case 'w': note_on_off(62); break; // レ
+    case '3': note_on_off(63); break; // レ＃
+    case 'e': note_on_off(64); break; // ミ
+    case 'r': note_on_off(65); break; // ファ
+    case '5': note_on_off(66); break; // ファ＃
+    case 't': note_on_off(67); break; // ソ
+    case '6': note_on_off(68); break; // ソ＃
+    case 'y': note_on_off(69); break; // ラ
+    case '7': note_on_off(70); break; // ラ＃
+    case 'u': note_on_off(71); break; // シ
+    case 'i': note_on_off(72); break; // ド
+    case '1': if (octave_shift > -5) { --octave_shift; } break;
+    case '9': if (octave_shift < 4)  { ++octave_shift; } break;
+    case '0': all_notes_off(); break;
     case 'z': if (Fil_cut > 0)   { --Fil_cut; } break;
     case 'x': if (Fil_cut < 120) { ++Fil_cut; } break;
     case 'n': if (Fil_res > 0)   { --Fil_res; } break;
@@ -218,12 +267,15 @@ int main() {
     }
     static uint32_t loop_counter = 0; // ループ回数
     if ((++loop_counter & 0xFFFFF) == 0) {
-      printf("p:[%3lu,%3lu,%3lu,%3lu], g:[%ld,%ld,%ld,%ld], c:%3lu, r:%lu, ",
-        voice_pitch[0], voice_pitch[1], voice_pitch[2], voice_pitch[3],
-        voice_gate_on[0], voice_gate_on[1], voice_gate_on[2], voice_gate_on[3],
-        Fil_cut, Fil_res);
+
+      printf("p:[%3lu,%3lu,%3lu,%3lu], g:[%ld,%ld,%ld,%ld], o:%+ld, ",
+          voice_pitch[0], voice_pitch[1], voice_pitch[2], voice_pitch[3],
+          voice_gate[0], voice_gate[1], voice_gate[2], voice_gate[3],
+          octave_shift);
+      printf("c:%3lu, r:%lu, ",
+          Fil_cut, Fil_res);
       printf("start:%4u/%4u, processing:%4u/%4u\n",
-        s_time, max_s_time, p_time, max_p_time);
+          s_time, max_s_time, p_time, max_p_time);
     }
   }
 }
