@@ -43,7 +43,7 @@ static void Osc_init() {
   }
 }
 
-static inline Q28 Osc_process(uint32_t voice, uint32_t pitch) {
+static inline Q28 Osc_process(uint32_t voice, uint32_t pitch, Q14 mod_in) {
   static uint32_t phase[4]; // 位相
   phase[voice] += Osc_freq_table[pitch] + (voice * 256); // 周波数を少しずらす
 
@@ -60,15 +60,16 @@ static inline Q28 Osc_process(uint32_t voice, uint32_t pitch) {
 
 //////// フィルタ ////////////////////////////////
 struct F_COEFS { Q28 b0_a0, a1_a0, a2_a0; };
-struct F_COEFS Fil_table[8][121]; // フィルタ係数群テーブル
+struct F_COEFS Fil_table[8][481]; // フィルタ係数群テーブル
 
-static volatile uint32_t Fil_cut = 120; // カットオフ設定値
-static volatile uint32_t Fil_res = 0;   // レゾナンス設定値
+static volatile int32_t Fil_cut     =  480; // カットオフ設定値
+static volatile int32_t Fil_res     =  0;   // レゾナンス設定値
+static volatile int32_t Fil_cut_mod = +0;   // モジュレーション量設定値
 
 static void Fil_init() {
   for (uint32_t res = 0; res < 8; ++res) {
-    for (uint32_t cut = 0; cut < 121; ++cut) {
-      float f0    = FA * powf(2, (cut - 54.0F) / 12);
+    for (uint32_t cut = 0; cut < 481; ++cut) {
+      float f0    = FA * powf(2, ((cut / 4.0F) - 54) / 12);
       float w0    = 2 * PI * f0 / FS;
       float q     = powf(sqrtf(2), res - 1.0F);
       float alpha = sinf(w0) / (2 * q);
@@ -92,11 +93,16 @@ static inline int32_t mul_32_32_h32(int32_t x, int32_t y) {
   return (z >> 16) + (x0_y1 >> 16) + (x1 * y1);
 }
 
-static inline Q28 Fil_process(uint32_t voice, Q28 x0) {
-  static uint32_t f_counter[4];       // フィルタ処理回数
-  static uint32_t curr_cut[4];        // カットオフ現在値
-  uint32_t        targ_cut = Fil_cut; // カットオフ目標値
-  uint32_t delta = ((++f_counter[voice] & 0xF) == 0);
+static inline Q28 Fil_process(uint32_t voice, Q28 x0, Q14 mod_in) {
+  static uint32_t f_counter[4]; // フィルタ処理回数
+  static uint32_t curr_cut[4];  // カットオフ現在値
+
+  int32_t targ_cut = Fil_cut;   // カットオフ目標値（クランプ）
+  targ_cut += (Fil_cut_mod * mod_in) >> 14;
+  targ_cut += (targ_cut < 0)   * (0 - targ_cut);
+  targ_cut -= (targ_cut > 480) * (targ_cut - 480);
+
+  uint32_t delta = ((++f_counter[voice] & 0x3) == 0);
   curr_cut[voice] += (curr_cut[voice] < targ_cut) * delta;
   curr_cut[voice] -= (curr_cut[voice] > targ_cut) * delta;
   struct F_COEFS* coefs = &Fil_table[Fil_res][curr_cut[voice]];
@@ -166,7 +172,7 @@ static volatile uint16_t max_p_time = 0; // 最大処理時間
 
 static volatile int32_t  voice_gate[4];  // ゲート制御値（ボイス毎）
 static volatile uint32_t voice_pitch[4]; // ピッチ制御値（ボイス毎）
-static volatile int32_t  octave_shift;   // オクターブシフト量
+static volatile int32_t  octave_shift;   // オクターブシフト値
 
 static void pwm_irq_handler() {
   pwm_clear_irq(PWMA_SLICE);
@@ -175,8 +181,8 @@ static void pwm_irq_handler() {
   Q28 voice_level[4];
   for (uint32_t voice = 0; voice < 4; ++voice) {
     Q14 eg_out = EG_process(voice, voice_gate[voice]);
-    Q28 osc_out = Osc_process(voice, voice_pitch[voice]);
-    Q28 fil_out = Fil_process(voice, osc_out);
+    Q28 osc_out = Osc_process(voice, voice_pitch[voice], ONE_Q14);
+    Q28 fil_out = Fil_process(voice, osc_out, ONE_Q14);
     Q28 amp_out = Amp_process(voice, fil_out, eg_out);
     voice_level[voice] = amp_out;
   }
@@ -235,10 +241,12 @@ int main() {
     case '1': if (octave_shift > -5) { --octave_shift; } break;
     case '9': if (octave_shift < 4)  { ++octave_shift; } break;
     case '0': all_notes_off(); break;
-    case 'z': if (Fil_cut > 0)   { --Fil_cut; } break;
-    case 'x': if (Fil_cut < 120) { ++Fil_cut; } break;
-    case 'n': if (Fil_res > 0)   { --Fil_res; } break;
-    case 'm': if (Fil_res < 7)   { ++Fil_res; } break;
+    case 'G': if (Fil_cut     > 0)    { Fil_cut     -= 4; } break;
+    case 'g': if (Fil_cut     < 480)  { Fil_cut     += 4; } break;
+    case 'H': if (Fil_res     > 0)    { Fil_res     -= 1; } break;
+    case 'h': if (Fil_res     < 7)    { Fil_res     += 1; } break;
+    case 'J': if (Fil_cut_mod > -240) { Fil_cut_mod -= 4; } break;
+    case 'j': if (Fil_cut_mod < +240) { Fil_cut_mod += 4; } break;
     }
     static uint32_t loop_counter = 0; // ループ回数
     if ((++loop_counter & 0xFFFFF) == 0) {
@@ -246,8 +254,8 @@ int main() {
           voice_pitch[0], voice_pitch[1], voice_pitch[2], voice_pitch[3],
           voice_gate[0], voice_gate[1], voice_gate[2], voice_gate[3],
           octave_shift);
-      printf("cut:%3lu, res:%lu,\n",
-          Fil_cut, Fil_res);
+      printf("cut:%3ld, res:%ld, cut_mod:%+3ld,\n",
+          Fil_cut, Fil_res, Fil_cut_mod);
       printf("start:%4u/%4u, processing:%4u/%4u\n\n",
           s_time, max_s_time, p_time, max_p_time);
     }
