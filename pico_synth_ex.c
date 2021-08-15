@@ -16,8 +16,8 @@ typedef int16_t Q14; // 小数部14ビットの符号付き固定小数点数
 #define FA      (440.0F)    // 基準周波数（Hz）
 
 //////// オシレータ //////////////////////////////
-static uint32_t          Osc_freq_table[121];      // 周波数テーブル
-static Q14               Osc_wave_tables[31][512]; // 波形テーブル群
+static uint32_t Osc_freq_table[121];      // 周波数テーブル
+static Q14      Osc_wave_tables[31][512]; // 波形テーブル群
 
 static void Osc_init() {
   for (uint32_t pitch = 0; pitch < 121; ++pitch) {
@@ -127,8 +127,8 @@ static inline int32_t mul_32_16_h32(int32_t x, int16_t y) {
   return ((x0 * y) >> 16) + (x1 * y);
 }
 
-static inline Q28 Amp_process(uint32_t voice, Q28 in, Q14 gain_in) {
-  return mul_32_16_h32(in, gain_in) << 2;
+static inline Q28 Amp_process(uint32_t voice, Q28 in, Q14 gain) {
+  return mul_32_16_h32(in, gain) << 2;
 }
 
 //////// LFO（Low Frequency Oscillator） /////////
@@ -138,8 +138,13 @@ static inline Q28 Amp_process(uint32_t voice, Q28 in, Q14 gain_in) {
 static inline Q14 EG_process(uint32_t voice, int32_t gate) {
   static Q14 curr_level[4];           // レベル現在値
   Q14        targ_level = gate << 14; // レベル目標値
+#if 1
+  curr_level[voice] =
+      targ_level - (((targ_level - curr_level[voice]) * 16368) / 16384);
+#else
   curr_level[voice] =
       targ_level - (((targ_level - curr_level[voice]) * 255) / 256);
+#endif
   return curr_level[voice];
 }
 
@@ -181,16 +186,16 @@ static void pwm_irq_handler() {
   pwm_clear_irq(PWMA_SLICE);
   s_time = pwm_get_counter(PWMA_SLICE);
 
-  Q28 voice_level[4];
+  Q28 voice_out[4];
   for (uint32_t voice = 0; voice < 4; ++voice) {
     Q14 eg_out = EG_process(voice, voice_gate[voice]);
     Q28 osc_out = Osc_process(voice, voice_pitch[voice], ONE_Q14);
-    Q28 fil_out = Fil_process(voice, osc_out, ONE_Q14);
+    Q28 fil_out = Fil_process(voice, osc_out, eg_out);
     Q28 amp_out = Amp_process(voice, fil_out, eg_out);
-    voice_level[voice] = amp_out;
+    voice_out[voice] = amp_out;
   }
-  PWMA_process((voice_level[0] + voice_level[1] +
-                voice_level[2] + voice_level[3]) >> 2);
+  PWMA_process((voice_out[0] + voice_out[1] +
+                voice_out[2] + voice_out[3]) >> 2);
 
   uint16_t end_time = pwm_get_counter(PWMA_SLICE);
   p_time = end_time - s_time; // 簡略化
