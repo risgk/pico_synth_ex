@@ -20,9 +20,9 @@ static uint32_t Osc_freq_table[121];      // 周波数テーブル
 static Q14      Osc_wave_tables[31][512]; // 波形テーブル群
 
 static volatile int32_t Osc_wav = 0; // 出力波形設定値
-static volatile int32_t Osc_co2 = 0; // オシレータ2ピッチ粗設定値
-static volatile int32_t Osc_fi2 = 0; // オシレータ2ピッチ詳細設定値
-static volatile int32_t Osc_mix = 0; // オシレータ1／2ミックス設定値
+static volatile int32_t Osc_2co = 0; // オシレータ2の粗ピッチ設定値
+static volatile int32_t Osc_2fi = 0; // オシレータ2の微ピッチ設定値
+static volatile int32_t Osc_mix = 0; // オシレータ1／2のミックス設定値
 
 static void Osc_init() {
   for (uint32_t pitch = 0; pitch < 121; ++pitch) {
@@ -194,7 +194,7 @@ static volatile uint16_t max_p_time = 0; // 最大処理時間
 
 static volatile int32_t  gate_voice[4];  // ゲート制御値（ボイス毎）
 static volatile uint32_t pitch_voice[4]; // ピッチ制御値（ボイス毎）
-static volatile int32_t  octave_shift;   // 鳴らす音のオクターブシフト量
+static volatile int32_t  octave_shift;   // キーのオクターブシフト量
 
 static void pwm_irq_handler() {
   pwm_clear_irq(PWMA_SLICE);
@@ -267,10 +267,10 @@ int main() {
 
     case 'A': if (Osc_wav > 0)   { --Osc_wav; } break;
     case 'a': if (Osc_wav < 1)   { ++Osc_wav; } break;
-    case 'S': if (Osc_co2 > 0)   { --Osc_co2; } break;
-    case 's': if (Osc_co2 < +24) { ++Osc_co2; } break;
-    case 'D': if (Osc_fi2 > 0)   { --Osc_fi2; } break;
-    case 'd': if (Osc_fi2 < +32) { ++Osc_fi2; } break;
+    case 'S': if (Osc_2co > 0)   { --Osc_2co; } break;
+    case 's': if (Osc_2co < +24) { ++Osc_2co; } break;
+    case 'D': if (Osc_2fi > 0)   { --Osc_2fi; } break;
+    case 'd': if (Osc_2fi < +32) { ++Osc_2fi; } break;
     case 'F': if (Osc_mix > 0)   { --Osc_mix; } break;
     case 'f': if (Osc_mix < 64)  { ++Osc_mix; } break;
 
@@ -300,7 +300,7 @@ int main() {
           gate_voice[0], gate_voice[1], gate_voice[2], gate_voice[3]);
       printf("Octave: %+ld\n", octave_shift);
       printf("Osc Wave: %1ld, Coarse2: %+2ld, Fine2: %+2ld, Mix: %2ld\n",
-          Osc_wav, Osc_co2, Osc_fi2, Osc_mix);
+          Osc_wav, Osc_2co, Osc_2fi, Osc_mix);
       printf("Fil Cutoff: %3ld, Resonance: %1ld, EG Amount: %+2ld\n",
           Fil_cut, Fil_res, Fil_mod);
       printf("EG  Attack: %2ld, Decay: %2ld, Sustain: %2ld\n",
