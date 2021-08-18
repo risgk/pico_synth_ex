@@ -48,17 +48,17 @@ static void Osc_init() {
   }
 }
 
-static inline Q28 Osc_process(uint32_t no, uint32_t pitch, Q14 pitch_mod) {
+static inline Q28 Osc_process(uint32_t id, uint32_t pitch, Q14 pitch_mod) {
   static uint32_t phase[4]; // 位相
-  phase[no] += Osc_freq_table[pitch] + (no * 256); // 周波数を少しずらす
+  phase[id] += Osc_freq_table[pitch] + (id * 256); // 周波数を少しずらす
 
   uint32_t pitch4 = (pitch + 3) >> 2;
   Q14* wave_table = Osc_wave_tables[pitch4];
-  uint32_t curr_index = phase[no] >> 23;
+  uint32_t curr_index = phase[id] >> 23;
   uint32_t next_index = (curr_index + 1) & 0x000001FF;
   Q14 curr_sample = wave_table[curr_index];
   Q14 next_sample = wave_table[next_index];
-  Q14 next_weight = (phase[no] >> 9) & 0x3FFF;
+  Q14 next_weight = (phase[id] >> 9) & 0x3FFF;
   return (curr_sample << 14) +
          ((next_sample - curr_sample) * next_weight);
 }
@@ -98,7 +98,7 @@ static inline int32_t mul_32_32_h32(int32_t x, int32_t y) {
   return (z >> 16) + (x0_y1 >> 16) + (x1 * y1);
 }
 
-static inline Q28 Fil_process(uint32_t no, Q28 x0, Q14 cut_mod) {
+static inline Q28 Fil_process(uint32_t id, Q28 x0, Q14 cut_mod) {
   static uint32_t f_counter[4];    // フィルタ処理回数
   static uint32_t curr_cut[4];     // カットオフ現在値
   int32_t targ_cut = Fil_cut << 2; // カットオフ目標値（設定値の4倍）
@@ -106,22 +106,22 @@ static inline Q28 Fil_process(uint32_t no, Q28 x0, Q14 cut_mod) {
   targ_cut += (targ_cut < 0)   * (0 - targ_cut);
   targ_cut -= (targ_cut > 480) * (targ_cut - 480);
 #if 1
-  curr_cut[no] += (curr_cut[no] < targ_cut);
-  curr_cut[no] -= (curr_cut[no] > targ_cut);
+  curr_cut[id] += (curr_cut[id] < targ_cut);
+  curr_cut[id] -= (curr_cut[id] > targ_cut);
 #else
-  uint32_t delta = ((++f_counter[no] & 0x3) == 0);
-  curr_cut[no] += (curr_cut[no] < targ_cut) * delta;
-  curr_cut[no] -= (curr_cut[no] > targ_cut) * delta;
+  uint32_t delta = ((++f_counter[id] & 0x3) == 0);
+  curr_cut[id] += (curr_cut[id] < targ_cut) * delta;
+  curr_cut[id] -= (curr_cut[id] > targ_cut) * delta;
 #endif
-  struct F_COEFS* coefs = &Fil_table[Fil_res][curr_cut[no]];
+  struct F_COEFS* coefs = &Fil_table[Fil_res][curr_cut[id]];
 
   static Q28 x1[4], x2[4], y1[4], y2[4];
-  Q28 x3 = x0 + (x1[no] << 1) + x2[no];
+  Q28 x3 = x0 + (x1[id] << 1) + x2[id];
   Q28 y0 = mul_32_32_h32(coefs->b0_a0, x3)        << 4;
-  y0    -= mul_32_32_h32(coefs->a1_a0, y1[no]) << 4;
-  y0    -= mul_32_32_h32(coefs->a2_a0, y2[no]) << 4;
-  x2[no] = x1[no]; y2[no] = y1[no];
-  x1[no] = x0;        y1[no] = y0;
+  y0    -= mul_32_32_h32(coefs->a1_a0, y1[id]) << 4;
+  y0    -= mul_32_32_h32(coefs->a2_a0, y2[id]) << 4;
+  x2[id] = x1[id]; y2[id] = y1[id];
+  x1[id] = x0;        y1[id] = y0;
   return y0;
 }
 
@@ -132,7 +132,7 @@ static inline int32_t mul_32_16_h32(int32_t x, int16_t y) {
   return ((x0 * y) >> 16) + (x1 * y);
 }
 
-static inline Q28 Amp_process(uint32_t no, Q28 in, Q14 gain) {
+static inline Q28 Amp_process(uint32_t id, Q28 in, Q14 gain) {
   return mul_32_16_h32(in, gain) << 2;
 }
 
@@ -141,24 +141,24 @@ static volatile int32_t EG_att = 0;  // アタック・タイム設定値
 static volatile int32_t EG_dec = 0;  // ディケイ・タイム設定値
 static volatile int32_t EG_sus = 64; // サスティン・レベル設定値
 
-static inline Q14 EG_process(uint32_t no, int32_t gate) {
+static inline Q14 EG_process(uint32_t id, int32_t gate) {
   static Q14 curr_level[4];           // レベル現在値
   Q14        targ_level = gate << 14; // レベル目標値
 #if 1
-  curr_level[no] =
-      targ_level - (((targ_level - curr_level[no]) * 16368) / 16384);
+  curr_level[id] =
+      targ_level - (((targ_level - curr_level[id]) * 16368) / 16384);
 #else
-  curr_level[no] =
-      targ_level - (((targ_level - curr_level[no]) * 255) / 256);
+  curr_level[id] =
+      targ_level - (((targ_level - curr_level[id]) * 255) / 256);
 #endif
-  return curr_level[no];
+  return curr_level[id];
 }
 
 //////// LFO（Low Frequency Oscillator） /////////
 static volatile int32_t LFO_dep = 0;  // 深さ設定値
 static volatile int32_t LFO_rat = 32; // 速さ設定値
 
-static inline Q14 LFO_process(uint32_t no) {
+static inline Q14 LFO_process(uint32_t id) {
   return 0; // TODO
 }
 
@@ -192,8 +192,8 @@ static volatile uint16_t max_s_time = 0; // 最大開始時間
 static volatile uint16_t p_time     = 0; // 処理時間
 static volatile uint16_t max_p_time = 0; // 最大処理時間
 
-static volatile int32_t  voice_gate[4];  // ゲート制御値（ボイス毎）
-static volatile uint32_t voice_pitch[4]; // ピッチ制御値（ボイス毎）
+static volatile int32_t  gate_voice[4];  // ゲート制御値（ボイス毎）
+static volatile uint32_t pitch_voice[4]; // ピッチ制御値（ボイス毎）
 static volatile int32_t  octave_shift;   // 鳴らす音のオクターブシフト量
 
 static void pwm_irq_handler() {
@@ -201,12 +201,12 @@ static void pwm_irq_handler() {
   s_time = pwm_get_counter(PWMA_SLICE);
 
   Q28 voice_out[4];
-  for (uint32_t no = 0; no < 4; ++no) {
-    Q14 eg_out = EG_process(no, voice_gate[no]);
-    Q28 osc_out = Osc_process(no, voice_pitch[no], ONE_Q14);
-    Q28 fil_out = Fil_process(no, osc_out, eg_out);
-    Q28 amp_out = Amp_process(no, fil_out, eg_out);
-    voice_out[no] = amp_out;
+  for (uint32_t id = 0; id < 4; ++id) {
+    Q14 eg_out = EG_process(id, gate_voice[id]);
+    Q28 osc_out = Osc_process(id, pitch_voice[id], ONE_Q14);
+    Q28 fil_out = Fil_process(id, osc_out, eg_out);
+    Q28 amp_out = Amp_process(id, fil_out, eg_out);
+    voice_out[id] = amp_out;
   }
   PWMA_process((voice_out[0] + voice_out[1] +
                 voice_out[2] + voice_out[3]) >> 2);
@@ -220,23 +220,23 @@ static void pwm_irq_handler() {
 static inline void note_on_off(uint32_t key)
 {
   uint32_t pitch = key + (octave_shift * 12);
-  if      (voice_pitch[0] == pitch) { voice_gate[0] = (voice_gate[0] == 0); }
-  else if (voice_pitch[1] == pitch) { voice_gate[1] = (voice_gate[1] == 0); }
-  else if (voice_pitch[2] == pitch) { voice_gate[2] = (voice_gate[2] == 0); }
-  else if (voice_pitch[3] == pitch) { voice_gate[3] = (voice_gate[3] == 0); }
-  else if (voice_gate[0] == 0) { voice_pitch[0] = pitch; voice_gate[0] = 1; }
-  else if (voice_gate[1] == 0) { voice_pitch[1] = pitch; voice_gate[1] = 1; }
-  else if (voice_gate[2] == 0) { voice_pitch[2] = pitch; voice_gate[2] = 1; }
-  else                         { voice_pitch[3] = pitch; voice_gate[3] = 1; }
+  if      (pitch_voice[0] == pitch) { gate_voice[0] = (gate_voice[0] == 0); }
+  else if (pitch_voice[1] == pitch) { gate_voice[1] = (gate_voice[1] == 0); }
+  else if (pitch_voice[2] == pitch) { gate_voice[2] = (gate_voice[2] == 0); }
+  else if (pitch_voice[3] == pitch) { gate_voice[3] = (gate_voice[3] == 0); }
+  else if (gate_voice[0] == 0) { pitch_voice[0] = pitch; gate_voice[0] = 1; }
+  else if (gate_voice[1] == 0) { pitch_voice[1] = pitch; gate_voice[1] = 1; }
+  else if (gate_voice[2] == 0) { pitch_voice[2] = pitch; gate_voice[2] = 1; }
+  else                         { pitch_voice[3] = pitch; gate_voice[3] = 1; }
 }
 
 static inline void all_notes_off()
 {
-  for (uint32_t no = 0; no < 4; ++no) { voice_gate[no] = 0; }
+  for (uint32_t id = 0; id < 4; ++id) { gate_voice[id] = 0; }
 }
 
 int main() {
-  for (uint32_t no = 0; no < 4; ++no) { voice_pitch[no] = 60; }
+  for (uint32_t id = 0; id < 4; ++id) { pitch_voice[id] = 60; }
 #if 1
   note_on_off(60); note_on_off(64); note_on_off(67); note_on_off(71);
 #endif
@@ -296,8 +296,8 @@ int main() {
     static uint32_t loop_counter = 0; // ループ回数
     if ((++loop_counter & 0xFFFFF) == 0) {
       printf("Pitch: [%3lu, %3lu, %3lu, %3lu], Gate: [%ld, %ld, %ld, %ld]\n",
-          voice_pitch[0], voice_pitch[1], voice_pitch[2], voice_pitch[3],
-          voice_gate[0], voice_gate[1], voice_gate[2], voice_gate[3]);
+          pitch_voice[0], pitch_voice[1], pitch_voice[2], pitch_voice[3],
+          gate_voice[0], gate_voice[1], gate_voice[2], gate_voice[3]);
       printf("Octave: %+ld\n", octave_shift);
       printf("Osc Wave: %1ld, Coarse2: %+2ld, Fine2: %+2ld, Mix: %2ld\n",
           Osc_wav, Osc_co2, Osc_fi2, Osc_mix);
