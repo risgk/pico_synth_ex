@@ -295,17 +295,23 @@ int main() {
     }
     static uint32_t loop_counter = 0; // ループ回数
     if ((++loop_counter & 0xFFFFF) == 0) {
-      printf("Pitch: [%3lu, %3lu, %3lu, %3lu], Gate: [%ld, %ld, %ld, %ld]\n",
-          pitch_voice[0], pitch_voice[1], pitch_voice[2], pitch_voice[3],
+      printf("Pitch: [ %3lu, %3lu, %3lu, %3lu ]\n",
+          pitch_voice[0], pitch_voice[1], pitch_voice[2], pitch_voice[3]);
+      printf("Gate:  [   %ld,   %ld,   %ld,   %ld ]\n",
           gate_voice[0], gate_voice[1], gate_voice[2], gate_voice[3]);
-      printf("Octave: %+ld\n", octave_shift);
-      printf("Osc Wave: %1ld, Coarse2: %+2ld, Fine2: %+2ld, Mix: %2ld\n",
-          Osc_wav, Osc_2co, Osc_2fi, Osc_mix);
-      printf("Fil Cutoff: %3ld, Resonance: %1ld, EG Amount: %+2ld\n",
-          Fil_cut, Fil_res, Fil_mod);
-      printf("EG  Attack: %2ld, Decay: %2ld, Sustain: %2ld\n",
-          EG_att, EG_dec, EG_sus);
-      printf("LFO Depth: %2ld, Rate: %2ld\n", LFO_dep, LFO_rat);
+      printf("Octave shift :  %+1ld <1/9>\n",  octave_shift);
+      printf("Osc Wave     :   %1ld <A/a>\n",  Osc_wav);
+      printf("Osc 2 Coarse : %+3ld <S/s>\n",   Osc_2co);
+      printf("Osc 2 Fine   : %+3ld <D/d>\n",   Osc_2fi);
+      printf("Osc 1/2 Mix  :  %2ld <F/f>\n",   Osc_mix);
+      printf("Fil Cutoff   : %3ld <G/g>\n",    Fil_cut);
+      printf("Fil Resonance:   %1ld <H/h>\n",  Fil_res);
+      printf("EG  Amount   : %+3ld <j/J>\n",   Fil_mod);
+      printf("EG  Attack   :  %2ld <Z/z>\n",   EG_att);
+      printf("EG  Decay    :  %2ld <X/x>\n",   EG_dec);
+      printf("EG  Sustain  :  %2ld <C/c>\n",   EG_sus);
+      printf("LFO Depth    :  %2ld <B/b>\n",   LFO_dep);
+      printf("LFO Rate     :  %2ld <N/n>\n",   LFO_rat);
       printf("Start time: %4u/%4u, Processing time: %4u/%4u\n\n",
           s_time, max_s_time, p_time, max_p_time);
     }
