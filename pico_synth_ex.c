@@ -65,14 +65,14 @@ static inline Q28 Osc_process(uint32_t no, uint32_t pitch, Q14 pitch_mod) {
 
 //////// フィルタ ////////////////////////////////
 struct F_COEFS { Q28 b0_a0, a1_a0, a2_a0; };
-struct F_COEFS Fil_table[8][481]; // フィルタ係数群テーブル
+struct F_COEFS Fil_table[6][481]; // フィルタ係数群テーブル
 
 static volatile int32_t Fil_cut = 120; // カットオフ設定値
 static volatile int32_t Fil_res = 0;   // レゾナンス設定値
 static volatile int32_t Fil_mod = 0;   // カットオフ変調量設定値
 
 static void Fil_init() {
-  for (uint32_t res = 0; res < 8; ++res) {
+  for (uint32_t res = 0; res < 6; ++res) {
     for (uint32_t cut = 0; cut < 481; ++cut) {
       float f0    = FA * powf(2, ((cut / 4.0F) - 54) / 12);
       float w0    = 2 * PI * f0 / FS;
@@ -267,9 +267,9 @@ int main() {
 
     case 'A': if (Osc_wav > 0)   { --Osc_wav; } break;
     case 'a': if (Osc_wav < 1)   { ++Osc_wav; } break;
-    case 'S': if (Osc_co2 > -48) { --Osc_co2; } break;
-    case 's': if (Osc_co2 < +48) { ++Osc_co2; } break;
-    case 'D': if (Osc_fi2 > -32) { --Osc_fi2; } break;
+    case 'S': if (Osc_co2 > 0)   { --Osc_co2; } break;
+    case 's': if (Osc_co2 < +24) { ++Osc_co2; } break;
+    case 'D': if (Osc_fi2 > 0)   { --Osc_fi2; } break;
     case 'd': if (Osc_fi2 < +32) { ++Osc_fi2; } break;
     case 'F': if (Osc_mix > 0)   { --Osc_mix; } break;
     case 'f': if (Osc_mix < 64)  { ++Osc_mix; } break;
@@ -277,8 +277,8 @@ int main() {
     case 'G': if (Fil_cut > 0)   { --Fil_cut; } break;
     case 'g': if (Fil_cut < 120) { ++Fil_cut; } break;
     case 'H': if (Fil_res > 0)   { --Fil_res; } break;
-    case 'h': if (Fil_res < 7)   { ++Fil_res; } break;
-    case 'J': if (Fil_mod > -60) { --Fil_mod; } break;
+    case 'h': if (Fil_res < 5)   { ++Fil_res; } break;
+    case 'J': if (Fil_mod > 0)   { --Fil_mod; } break;
     case 'j': if (Fil_mod < +60) { ++Fil_mod; } break;
 
     case 'Z': if (EG_att  > 0)   { --EG_att;  } break;
