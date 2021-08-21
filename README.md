@@ -24,6 +24,11 @@ Raspberry Pi Pico用のポリフォニック・シンセサイザです．
 の組み合わせで動作確認しています．
 
 
+## ビルド方法
+
+pico_synth_exディレクトリにpico-sdk/external/pico_sdk_import.cmakeのコピーを置き，環境変数PICO_SDK_PATHにpico-sdkディレクトリへのパスをセットしておきます．buildディレクトリを作成すれば，pico-examplesと同様にcmakeやnmake（make）コマンドでビルドでき，pico_synth.uf2ファイルが出力されます．
+
+
 ## 仕様
 
 - 部品構成：（2オシレータ ＋ 1フィルタ ＋ 1アンプ ＋ 1 LFO ＋ 1 EG）× 4セット
