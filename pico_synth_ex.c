@@ -43,7 +43,7 @@ static inline int32_t mul_32_u16_h32(int32_t x, uint16_t y) {
 }
 
 //////// オシレータ //////////////////////////////
-static uint32_t Osc_freq_table[121];      // 周波数テーブル
+static uint32_t Osc_freq_table[122];      // 周波数テーブル
 static Q14      Osc_fine_table[256];      // 周波数微調整テーブル
 static Q14      Osc_wave_tables[31][512]; // 波形テーブル群
 
@@ -53,7 +53,7 @@ static volatile int8_t  Osc_2fi = 0; // オシレータ2の微ピッチ設定値
 static volatile uint8_t Osc_mix = 0; // オシレータ1／2のミックス設定値
 
 static void Osc_init() {
-  for (uint8_t pitch = 0; pitch < 121; ++pitch) {
+  for (uint8_t pitch = 0; pitch < 122; ++pitch) {
     uint32_t freq = (FA * powf(2, (pitch - 69.0F) / 12)) * (1LL << 32) / FS;
     freq = ((freq >> 9) << 9) + 256; // 少し半端な値にする
     Osc_freq_table[pitch] = freq;
@@ -69,7 +69,7 @@ printf("%u\n",Osc_fine_table[fine_pitch]);
   for (uint8_t pitch_div_4 = 0; pitch_div_4 < 31; ++pitch_div_4) {
     uint16_t harm_max = // 最大倍音次数
         (((FS - 1.0F) / 2) * (1LL << 32) / FS) /
-        Osc_freq_table[pitch_div_4 << 2];
+        Osc_freq_table[(pitch_div_4 << 2) + 1];
     if (harm_max > 127) { harm_max = 127; }
 
     for (uint16_t i = 0; i < 512; ++i) {
