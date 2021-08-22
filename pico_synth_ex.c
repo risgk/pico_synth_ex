@@ -112,6 +112,7 @@ static inline Q28 Osc_process(uint8_t id, uint16_t full_pitch, Q14 pitch_mod) {
   phase2[id] += freq2 + (id << 7);
   phase2[id] += ((int32_t) (freq2 >> 8) * Osc_tune_table[tune_index2]) >> 6;
 
+  // TODO: wave_table切替えをスムーズにしたい（周期の頭で切替えるのが良い？）
   return mul_32_u16_h32(Osc_phase_to_disp(phase1[id], pitch1),
                                            (64 - Osc_mix) << 8) +
          mul_32_u16_h32(Osc_phase_to_disp(phase2[id], pitch2),
@@ -151,7 +152,7 @@ static inline Q28 Fil_process(uint8_t id, Q28 x0, Q14 cut_mod) {
   targ_cut += (Fil_mod * cut_mod) >> (14 - 2);
   targ_cut += (targ_cut < 0)   * (0 - targ_cut);
   targ_cut -= (targ_cut > 480) * (targ_cut - 480);
-#if 1
+#if 1 // TODO: コチラでOK？
   curr_cut[id] += (curr_cut[id] < targ_cut);
   curr_cut[id] -= (curr_cut[id] > targ_cut);
 #else
