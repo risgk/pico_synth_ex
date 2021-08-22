@@ -48,8 +48,8 @@ static Q14      Osc_tune_table[256];      // 周波数微調整テーブル
 static Q14      Osc_wave_tables[31][512]; // 波形テーブル群
 
 static volatile uint8_t Osc_waveform = 0; // 出力波形設定値
-static volatile int8_t  Osc_2_coarse = 0; // オシレータ2の粗ピッチ設定値
-static volatile int8_t  Osc_2_fine   = 4; // オシレータ2の微ピッチ設定値
+static volatile int8_t  Osc_2_coarse_pitch = 0; // オシレータ2の粗ピッチ設定値
+static volatile int8_t  Osc_2_fine_pitch   = 4; // オシレータ2の微ピッチ設定値
 static volatile uint8_t Osc_1_2_mix  = 0; // オシレータ1／2のミックス設定値
 
 static void Osc_init() {
@@ -97,14 +97,17 @@ static inline Q28 Osc_process(uint8_t id,
                               uint16_t full_pitch, Q14 pitch_mod_in) {
   static uint32_t phase1[4]; // オシレータ1の位相
   int32_t full_pitch1 = full_pitch + ((256 * pitch_mod_in) >> 14);
+  full_pitch1 += (full_pitch1 < 0)          * (0 - full_pitch1);
+  full_pitch1 -= (full_pitch1 > (120 << 8)) * (full_pitch1 - (120 << 8));
   uint8_t pitch1      = (full_pitch1 + 128) >> 8; // Osc_tune_tableに合わせ+ 128
   uint8_t tune_index1 = (full_pitch1 + 128) & 0xFF;
   uint32_t freq1 = Osc_freq_table[pitch1];
   phase1[id] += freq1 + (id << 7); // ボイス毎に周波数を少しずらす
-  phase1[id] += (freq1 * Osc_tune_table[tune_index1]) >> 14;
+  phase1[id] += ((int32_t) (freq1 >> 8) * Osc_tune_table[tune_index1]) >> 6;
 
   static uint32_t phase2[4]; // オシレータ2の位相
-  int32_t full_pitch2 = full_pitch + (Osc_2_coarse << 8) + (Osc_2_fine << 2);
+  int32_t full_pitch2 = full_pitch1 +
+                        (Osc_2_coarse_pitch << 8) + (Osc_2_fine_pitch << 2);
   full_pitch2 += (full_pitch2 < 0)          * (0 - full_pitch2);
   full_pitch2 -= (full_pitch2 > (120 << 8)) * (full_pitch2 - (120 << 8));
   uint8_t pitch2      = (full_pitch2 + 128) >> 8;
@@ -113,6 +116,7 @@ static inline Q28 Osc_process(uint8_t id,
   phase2[id] += freq2 + (id << 7);
   phase2[id] += ((int32_t) (freq2 >> 8) * Osc_tune_table[tune_index2]) >> 6;
 
+  // TODO: 音量感が変わらないようにミックスバランスを調整
   // TODO: wave_table切替えをスムーズにしたい（周期の頭で切替えるのが良い？）
   return mul_32_u16_h32(Osc_phase_to_disp(phase1[id], pitch1),
                                        (64 - Osc_1_2_mix) << 8) +
@@ -153,14 +157,8 @@ static inline Q28 Fil_process(uint8_t id, Q28 audio_in, Q14 cutoff_mod_in) {
   targ_cutoff += (Fil_mod_amount * cutoff_mod_in) >> (14 - 2);
   targ_cutoff += (targ_cutoff < 0)   * (0 - targ_cutoff);
   targ_cutoff -= (targ_cutoff > 480) * (targ_cutoff - 480);
-#if 1 // TODO: コチラでOK？
-  curr_cutoff[id] += (curr_cutoff[id] < targ_cutoff);
+  curr_cutoff[id] += (curr_cutoff[id] < targ_cutoff); // 変化スピードを調整した
   curr_cutoff[id] -= (curr_cutoff[id] > targ_cutoff);
-#else
-  uint8_t delta = ((++f_counter[id] & 0x3) == 0);
-  curr_cutoff[id] += (curr_cutoff[id] < targ_cutoff) * delta;
-  curr_cutoff[id] -= (curr_cutoff[id] > targ_cutoff) * delta;
-#endif
   struct F_COEFS* coefs = &Fil_table[Fil_resonance][curr_cutoff[id]];
 
   static Q28 x1[4], x2[4], y1[4], y2[4];
@@ -170,7 +168,7 @@ static inline Q28 Fil_process(uint8_t id, Q28 audio_in, Q14 cutoff_mod_in) {
   y0    -= mul_32_32_h32(coefs->a1_a0, y1[id]) << 4;
   y0    -= mul_32_32_h32(coefs->a2_a0, y2[id]) << 4;
   x2[id] = x1[id]; y2[id] = y1[id];
-  x1[id] = x0;        y1[id] = y0;
+  x1[id] = x0;     y1[id] = y0;
   return y0;
 }
 
@@ -180,8 +178,8 @@ static inline Q28 Amp_process(uint8_t id, Q28 audio_in, Q14 gain_in) {
 }
 
 //////// EG（Envelope Generator） ////////////////
-static volatile uint8_t EG_attack_time = 0;  // アタック・タイム設定値
-static volatile uint8_t EG_decay_time = 0;  // ディケイ・タイム設定値
+static volatile uint8_t EG_attack_time   = 0;  // アタック・タイム設定値
+static volatile uint8_t EG_decay_time    = 0;  // ディケイ・タイム設定値
 static volatile uint8_t EG_sustain_level = 64; // サスティン・レベル設定値
 
 static inline Q14 EG_process(uint8_t id, uint8_t gate_in) {
@@ -204,22 +202,14 @@ static volatile uint8_t LFO_rate  = 32; // 速さ設定値
 static inline Q14 LFO_process(uint8_t id) {
   static uint32_t phase[4]; // 位相
   uint8_t rate = LFO_rate;
-  phase[id] -= (((rate + 4) * (rate + 4)) + id) << 9;
+  phase[id] += (((rate + 4) * (rate + 4)) + id) << 9;
 
-#if 0
-  // 下降ノコギリ波を生成
-  int16_t out = phase[id] >> 18;
-#else
   // 三角波を生成
-  int16_t out = phase[id] >> 16;
-  if (out < -16384) { // TODO: 条件分岐を排除したい
-    out = -16384 - (out + 16384);
-  } else if (out >= 16384) {
-    out = 16384 - (out - 16384);
-  }
-  out >>= 1;
-#endif
-  return (out * LFO_depth) >> 6; 
+  uint16_t phase_h16 = phase[id] >> 16;
+  uint16_t out = 0;
+  out += (phase_h16 <  32768) * (phase_h16 - 0);
+  out += (phase_h16 >= 32768) * (65536 - phase_h16);
+  return ((out - 16384) * LFO_depth) >> 7;
 }
 
 //////// PWMオーディオ出力部 /////////////////////
@@ -327,59 +317,59 @@ int main() {
     case 'u': note_on_off(71); break; // シ
     case 'i': note_on_off(72); break; // ド
 
-    case '1': if (octave_shift > -5) { --octave_shift; } break;
-    case '9': if (octave_shift < +4) { ++octave_shift; } break;
+    case '1': if (octave_shift       > -5)  { --octave_shift;       } break;
+    case '9': if (octave_shift       < +4)  { ++octave_shift;       } break;
     case '0': all_notes_off(); break;
 
-    case 'A': if (Osc_waveform     > 0)   { --Osc_waveform;     } break;
-    case 'a': if (Osc_waveform     < 1)   { ++Osc_waveform;     } break;
-    case 'S': if (Osc_2_coarse     > 0)   { --Osc_2_coarse;     } break;
-    case 's': if (Osc_2_coarse     < +24) { ++Osc_2_coarse;     } break;
-    case 'D': if (Osc_2_fine       > 0)   { --Osc_2_fine;       } break;
-    case 'd': if (Osc_2_fine       < +32) { ++Osc_2_fine;       } break;
-    case 'F': if (Osc_1_2_mix      > 0)   { --Osc_1_2_mix;      } break;
-    case 'f': if (Osc_1_2_mix      < 64)  { ++Osc_1_2_mix;      } break;
+    case 'A': if (Osc_waveform       > 0)   { --Osc_waveform;       } break;
+    case 'a': if (Osc_waveform       < 1)   { ++Osc_waveform;       } break;
+    case 'S': if (Osc_2_coarse_pitch > 0)   { --Osc_2_coarse_pitch; } break;
+    case 's': if (Osc_2_coarse_pitch < +24) { ++Osc_2_coarse_pitch; } break;
+    case 'D': if (Osc_2_fine_pitch   > 0)   { --Osc_2_fine_pitch;   } break;
+    case 'd': if (Osc_2_fine_pitch   < +32) { ++Osc_2_fine_pitch;   } break;
+    case 'F': if (Osc_1_2_mix        > 0)   { --Osc_1_2_mix;        } break;
+    case 'f': if (Osc_1_2_mix        < 64)  { ++Osc_1_2_mix;        } break;
 
-    case 'G': if (Fil_cutoff       > 0)   { --Fil_cutoff;       } break;
-    case 'g': if (Fil_cutoff       < 120) { ++Fil_cutoff;       } break;
-    case 'H': if (Fil_resonance    > 0)   { --Fil_resonance;    } break;
-    case 'h': if (Fil_resonance    < 5)   { ++Fil_resonance;    } break;
-    case 'J': if (Fil_mod_amount   > 0)   { --Fil_mod_amount;   } break;
-    case 'j': if (Fil_mod_amount   < +60) { ++Fil_mod_amount;   } break;
+    case 'G': if (Fil_cutoff         > 0)   { --Fil_cutoff;         } break;
+    case 'g': if (Fil_cutoff         < 120) { ++Fil_cutoff;         } break;
+    case 'H': if (Fil_resonance      > 0)   { --Fil_resonance;      } break;
+    case 'h': if (Fil_resonance      < 5)   { ++Fil_resonance;      } break;
+    case 'J': if (Fil_mod_amount     > 0)   { --Fil_mod_amount;     } break;
+    case 'j': if (Fil_mod_amount     < +60) { ++Fil_mod_amount;     } break;
 
-    case 'Z': if (EG_attack_time   > 0)   { --EG_attack_time;   } break;
-    case 'z': if (EG_attack_time   < 64)  { ++EG_attack_time;   } break;
-    case 'X': if (EG_decay_time    > 0)   { --EG_decay_time;    } break;
-    case 'x': if (EG_decay_time    < 64)  { ++EG_decay_time;    } break;
-    case 'C': if (EG_sustain_level > 0)   { --EG_sustain_level; } break;
-    case 'c': if (EG_sustain_level < 64)  { ++EG_sustain_level; } break;
+    case 'Z': if (EG_attack_time     > 0)   { --EG_attack_time;     } break;
+    case 'z': if (EG_attack_time     < 64)  { ++EG_attack_time;     } break;
+    case 'X': if (EG_decay_time      > 0)   { --EG_decay_time;      } break;
+    case 'x': if (EG_decay_time      < 64)  { ++EG_decay_time;      } break;
+    case 'C': if (EG_sustain_level   > 0)   { --EG_sustain_level;   } break;
+    case 'c': if (EG_sustain_level   < 64)  { ++EG_sustain_level;   } break;
 
-    case 'B': if (LFO_rate         > 0)   { --LFO_rate;         } break;
-    case 'b': if (LFO_rate         < 64)  { ++LFO_rate;         } break;
-    case 'N': if (LFO_depth        > 0)   { --LFO_depth;        } break;
-    case 'n': if (LFO_depth        < 64)  { ++LFO_depth;        } break;
+    case 'B': if (LFO_depth          > 0)   { --LFO_depth;          } break;
+    case 'b': if (LFO_depth          < 64)  { ++LFO_depth;          } break;
+    case 'N': if (LFO_rate           > 0)   { --LFO_rate;           } break;
+    case 'n': if (LFO_rate           < 64)  { ++LFO_rate;           } break;
     }
     static uint32_t loop_counter = 0; // ループ回数
     if ((++loop_counter & 0xFFFFF) == 0) {
-      printf("Pitch           : [ %3hhu, %3hhu, %3hhu, %3hhu ]\n",
+      printf("Pitch             : [ %3hhu, %3hhu, %3hhu, %3hhu ]\n",
           pitch_voice[0], pitch_voice[1], pitch_voice[2], pitch_voice[3]);
-      printf("Gate            : [ %3hhu, %3hhu, %3hhu, %3hhu ]\n",
+      printf("Gate              : [ %3hhu, %3hhu, %3hhu, %3hhu ]\n",
           gate_voice[0], gate_voice[1], gate_voice[2], gate_voice[3]);
-      printf("Octave Shift    : %+3hhd (1/9)\n",   octave_shift);
-      printf("Osc Waveform    : %3hhu (A/a)\n",  Osc_waveform);
-      printf("Osc 2 Coarse    : %+3hhd (S/s)\n", Osc_2_coarse);
-      printf("Osc 2 Fine      : %+3hhd (D/d)\n", Osc_2_fine);
-      printf("Osc 1/2 Mix     : %3hhu (F/f)\n",  Osc_1_2_mix);
-      printf("Fil Cutoff      : %3hhu (G/g)\n",  Fil_cutoff);
-      printf("Fil Resonance   : %3hhu (H/h)\n",  Fil_resonance);
-      printf("Fil EG Amount   : %+3hhd (J/j)\n", Fil_mod_amount);
-      printf("EG Attack Time  : %3hhu (Z/z)\n",  EG_attack_time);
-      printf("EG Decay Time   : %3hhu (X/x)\n",  EG_decay_time);
-      printf("EG Sustain Level: %3hhu (C/c)\n",  EG_sustain_level);
-      printf("LFO Depth       : %3hhu (B/b)\n",  LFO_depth);
-      printf("LFO Rate        : %3hhu (N/n)\n",  LFO_rate);
-      printf("Start Time      : %4hu/%4hu\n",   s_time, max_s_time);
-      printf("Processing Time : %4hu/%4hu\n\n", p_time, max_p_time);
+      printf("Octave Shift      : %+3hhd (1/9)\n", octave_shift);
+      printf("Osc Waveform      : %3hhu (A/a)\n",  Osc_waveform);
+      printf("Osc 2 Coarse Pitch: %+3hhd (S/s)\n", Osc_2_coarse_pitch);
+      printf("Osc 2 Fine Pitch  : %+3hhd (D/d)\n", Osc_2_fine_pitch);
+      printf("Osc 1/2 Mix       : %3hhu (F/f)\n",  Osc_1_2_mix);
+      printf("Fil Cutoff        : %3hhu (G/g)\n",  Fil_cutoff);
+      printf("Fil Resonance     : %3hhu (H/h)\n",  Fil_resonance);
+      printf("Fil EG Amount     : %+3hhd (J/j)\n", Fil_mod_amount);
+      printf("EG Attack Time    : %3hhu (Z/z)\n",  EG_attack_time);
+      printf("EG Decay Time     : %3hhu (X/x)\n",  EG_decay_time);
+      printf("EG Sustain Level  : %3hhu (C/c)\n",  EG_sustain_level);
+      printf("LFO Depth         : %3hhu (B/b)\n",  LFO_depth);
+      printf("LFO Rate          : %3hhu (N/n)\n",  LFO_rate);
+      printf("Start Time        : %4hu/%4hu\n",   s_time, max_s_time);
+      printf("Processing Time   : %4hu/%4hu\n\n", p_time, max_p_time);
     }
   }
 }
