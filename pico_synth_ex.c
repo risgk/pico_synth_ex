@@ -44,7 +44,7 @@ static inline int32_t mul_32_u16_h32(int32_t x, uint16_t y) {
 
 //////// オシレータ //////////////////////////////
 static uint32_t Osc_freq_table[122];      // 周波数テーブル
-static Q14      Osc_fine_table[256];      // 周波数微調整テーブル
+static Q14      Osc_tune_table[256];      // 周波数微調整テーブル
 static Q14      Osc_wave_tables[31][512]; // 波形テーブル群
 
 static volatile uint8_t Osc_wav = 0; // 出力波形設定値
@@ -59,10 +59,9 @@ static void Osc_init() {
     Osc_freq_table[pitch] = freq;
   }
 
-  for (uint8_t fine_pitch = 0; fine_pitch < 256; ++fine_pitch) {
-    Osc_fine_table[fine_pitch] =
-        powf(2, (fine_pitch - 128.0F) / (12 * 256)) * ONE_Q14;
-printf("%u\n",Osc_fine_table[fine_pitch]);
+  for (uint16_t tune_index = 0; tune_index < 256; ++tune_index) {
+    Osc_tune_table[tune_index] =
+        (powf(2, (tune_index - 128.0F) / (12 * 256)) * ONE_Q14) - ONE_Q14;
   }
 
   // TODO: 参照テーブルを追加して、Osc_wave_tablesの重複データを無くしたい
@@ -96,21 +95,21 @@ static inline Q28 Osc_phase_to_disp(uint32_t phase, uint8_t pitch) {
 
 static inline Q28 Osc_process(uint8_t id, uint16_t full_pitch, Q14 pitch_mod) {
   static uint32_t phase1[4]; // オシレータ1の位相
-  uint8_t pitch1      = (full_pitch + 128) >> 8; // Osc_fine_tableに合わせ+ 128
-  uint8_t fine_pitch1 = (full_pitch + 128) & 0xFF;
+  uint8_t pitch1      = (full_pitch + 128) >> 8; // Osc_tune_tableに合わせ+ 128
+  uint8_t tune_index1 = (full_pitch + 128) & 0xFF;
   uint32_t freq1 = Osc_freq_table[pitch1];
   phase1[id] += freq1 + (id << 7); // ボイス毎に周波数を少しずらす
-  phase1[id] += (freq1 * Osc_fine_table[fine_pitch1]) >> 14;
+  phase1[id] += (freq1 * Osc_tune_table[tune_index1]) >> 14;
 
   static uint32_t phase2[4]; // オシレータ2の位相
   uint32_t full_pitch2 = full_pitch + (Osc_2co << 8) + (Osc_2fi << 2);
   full_pitch2 += (full_pitch2 < 0)          * (0 - full_pitch2);
   full_pitch2 -= (full_pitch2 > (120 << 8)) * (full_pitch2 - (120 << 8));
   uint8_t pitch2      = (full_pitch2 + 128) >> 8;
-  uint8_t fine_pitch2 = (full_pitch2 + 128) & 0xFF;
+  uint8_t tune_index2 = (full_pitch2 + 128) & 0xFF;
   uint32_t freq2 = Osc_freq_table[pitch2];
   phase2[id] += freq2 + (id << 7);
-  phase2[id] += (freq2 * Osc_fine_table[fine_pitch2]) >> 14;
+  phase2[id] += ((freq2 >> 8) * Osc_tune_table[tune_index2]) >> 6;
 
   return mul_32_u16_h32(Osc_phase_to_disp(phase1[id], pitch1),
                                            (64 - Osc_mix) << 8) +
