@@ -49,7 +49,7 @@ static Q14      Osc_wave_tables[31][512]; // 波形テーブル群
 
 static volatile uint8_t Osc_wav = 0; // 出力波形設定値
 static volatile int8_t  Osc_2co = 0; // オシレータ2の粗ピッチ設定値
-static volatile int8_t  Osc_2fi = 0; // オシレータ2の微ピッチ設定値
+static volatile int8_t  Osc_2fi = 4; // オシレータ2の微ピッチ設定値
 static volatile uint8_t Osc_mix = 0; // オシレータ1／2のミックス設定値
 
 static void Osc_init() {
@@ -95,21 +95,22 @@ static inline Q28 Osc_phase_to_disp(uint32_t phase, uint8_t pitch) {
 
 static inline Q28 Osc_process(uint8_t id, uint16_t full_pitch, Q14 pitch_mod) {
   static uint32_t phase1[4]; // オシレータ1の位相
-  uint8_t pitch1      = (full_pitch + 128) >> 8; // Osc_tune_tableに合わせ+ 128
-  uint8_t tune_index1 = (full_pitch + 128) & 0xFF;
+  int32_t full_pitch1 = full_pitch + ((256 * pitch_mod) >> 14);
+  uint8_t pitch1      = (full_pitch1 + 128) >> 8; // Osc_tune_tableに合わせ+ 128
+  uint8_t tune_index1 = (full_pitch1 + 128) & 0xFF;
   uint32_t freq1 = Osc_freq_table[pitch1];
   phase1[id] += freq1 + (id << 7); // ボイス毎に周波数を少しずらす
   phase1[id] += (freq1 * Osc_tune_table[tune_index1]) >> 14;
 
   static uint32_t phase2[4]; // オシレータ2の位相
-  uint32_t full_pitch2 = full_pitch + (Osc_2co << 8) + (Osc_2fi << 2);
+  int32_t full_pitch2 = full_pitch + (Osc_2co << 8) + (Osc_2fi << 2);
   full_pitch2 += (full_pitch2 < 0)          * (0 - full_pitch2);
   full_pitch2 -= (full_pitch2 > (120 << 8)) * (full_pitch2 - (120 << 8));
   uint8_t pitch2      = (full_pitch2 + 128) >> 8;
   uint8_t tune_index2 = (full_pitch2 + 128) & 0xFF;
   uint32_t freq2 = Osc_freq_table[pitch2];
   phase2[id] += freq2 + (id << 7);
-  phase2[id] += ((freq2 >> 8) * Osc_tune_table[tune_index2]) >> 6;
+  phase2[id] += ((int32_t) (freq2 >> 8) * Osc_tune_table[tune_index2]) >> 6;
 
   return mul_32_u16_h32(Osc_phase_to_disp(phase1[id], pitch1),
                                            (64 - Osc_mix) << 8) +
@@ -144,7 +145,7 @@ static void Fil_init() {
 }
 
 static inline Q28 Fil_process(uint8_t id, Q28 x0, Q14 cut_mod) {
-  static uint8_t f_counter[4];    // フィルタ処理回数
+  static uint8_t  f_counter[4];    // フィルタ処理回数
   static uint16_t curr_cut[4];     // カットオフ現在値
   int32_t targ_cut = Fil_cut << 2; // カットオフ目標値（設定値の4倍）
   targ_cut += (Fil_mod * cut_mod) >> (14 - 2);
@@ -198,7 +199,24 @@ static volatile uint8_t LFO_dep = 0;  // 深さ設定値
 static volatile uint8_t LFO_rat = 32; // 速さ設定値
 
 static inline Q14 LFO_process(uint8_t id) {
-  return 0; // TODO
+  static uint32_t phase[4]; // 位相
+  uint8_t rat = LFO_rat;
+  phase[id] -= (((rat + 4) * (rat + 4)) + id) << 9;
+
+#if 0
+  // 下降ノコギリ波を生成
+  int16_t out = phase[id] >> 18;
+#else
+  // 三角波を生成
+  int16_t out = phase[id] >> 16;
+  if (out < -16384) { // TODO: 条件分岐を排除したい
+    out = -16384 - (out + 16384);
+  } else if (out >= 16384) {
+    out = 16384 - (out - 16384);
+  }
+  out >>= 1;
+#endif
+  return (out * LFO_dep) >> 6; 
 }
 
 //////// PWMオーディオ出力部 /////////////////////
@@ -235,23 +253,29 @@ static volatile uint8_t gate_voice[4];  // ゲート制御値（ボイス毎）
 static volatile uint8_t pitch_voice[4]; // ピッチ制御値（ボイス毎）
 static volatile int8_t  octave_shift;   // キーのオクターブシフト量
 
+static inline Q28 process_voice(uint8_t id) {
+  Q14 lfo_out = LFO_process(id);
+  Q14 eg_out  = EG_process(id, gate_voice[id]);
+  Q28 osc_out = Osc_process(id, pitch_voice[id] << 8, lfo_out);
+  Q28 fil_out = Fil_process(id, osc_out, eg_out);
+  Q28 amp_out = Amp_process(id, fil_out, eg_out);
+  return amp_out;
+}
+
 static void pwm_irq_handler() {
   pwm_clear_irq(PWMA_SLICE);
   s_time = pwm_get_counter(PWMA_SLICE);
 
   Q28 voice_out[4];
-  for (uint8_t id = 0; id < 4; ++id) {
-    Q14 eg_out = EG_process(id, gate_voice[id]);
-    Q28 osc_out = Osc_process(id, pitch_voice[id] << 8, ONE_Q14);
-    Q28 fil_out = Fil_process(id, osc_out, eg_out);
-    Q28 amp_out = Amp_process(id, fil_out, eg_out);
-    voice_out[id] = amp_out;
-  }
+  voice_out[0] = process_voice(0);
+  voice_out[1] = process_voice(1);
+  voice_out[2] = process_voice(2);
+  voice_out[3] = process_voice(3);
   PWMA_process((voice_out[0] + voice_out[1] +
                 voice_out[2] + voice_out[3]) >> 2);
 
   uint16_t end_time = pwm_get_counter(PWMA_SLICE);
-  p_time = end_time - s_time; // 簡略化
+  p_time = end_time - s_time; // 計算を簡略化
   max_s_time += (s_time > max_s_time) * (s_time - max_s_time);
   max_p_time += (p_time > max_p_time) * (p_time - max_p_time);
 }
