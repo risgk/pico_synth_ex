@@ -130,7 +130,7 @@ static inline Q28 Osc_process(uint8_t id,
 
 //////// フィルタ ////////////////////////////////
 struct F_COEFS { Q28 b0_a0, a1_a0, a2_a0; };
-struct F_COEFS Fil_table[6][481]; // フィルタ係数群テーブル
+static struct F_COEFS Fil_table[6][481]; // フィルタ係数群テーブル
 
 static volatile uint8_t Fil_cutoff     = 120; // カットオフ設定値
 static volatile uint8_t Fil_resonance  = 0;   // レゾナンス設定値
@@ -200,13 +200,21 @@ static inline Q14 EG_process(uint8_t id, uint8_t gate_in) {
 }
 
 //////// LFO（Low Frequency Oscillator） /////////
+static uint32_t LFO_freq_table[65]; // 周波数テーブル
+
 static volatile uint8_t LFO_depth = 0;  // 深さ設定値
-static volatile uint8_t LFO_rate  = 32; // 速さ設定値
+static volatile uint8_t LFO_rate  = 48; // 速さ設定値
+
+static void LFO_init() {
+  for (uint8_t rate = 0; rate < 65; ++rate) {
+    LFO_freq_table[rate] =
+        2 * powf(10, (rate - 32.0F) / 32) * (1LL << 32) / FS;
+  }
+}
 
 static inline Q14 LFO_process(uint8_t id) {
   static uint32_t phase[4]; // 位相
-  uint8_t rate = LFO_rate;
-  phase[id] += (((rate + 4) * (rate + 4)) + id) << 9;
+  phase[id] += LFO_freq_table[LFO_rate] + (id << 7);
 
   // 三角波を生成
   uint16_t phase_h16 = phase[id] >> 16;
@@ -302,7 +310,7 @@ int main() {
 
   set_sys_clock_khz(FCLKSYS / 1000, true);
   stdio_init_all();
-  Osc_init(); Fil_init(); PWMA_init();
+  LFO_init(); Osc_init(); Fil_init(); PWMA_init();
 
   while (true) {
     switch (getchar_timeout_us(0)) {
