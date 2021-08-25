@@ -56,7 +56,7 @@ static volatile uint8_t Osc_1_2_mix        = 0; // オシレータ1／2ミック
 static void Osc_init() {
   for (uint8_t pitch = 0; pitch < 122; ++pitch) {
     uint32_t freq = (FA * powf(2, (pitch - 69.0F) / 12)) * (1LL << 32) / FS;
-    freq = ((freq >> 9) << 9) + 256; // 少し半端な値にする
+    freq = ((freq >> 4) << 4) + 9; // 少し半端な値にする
     Osc_freq_table[pitch] = freq;
   }
 
