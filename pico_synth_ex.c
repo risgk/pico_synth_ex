@@ -210,9 +210,8 @@ static inline Q14 LFO_process(uint8_t id) {
 
   // 三角波を生成
   uint16_t phase_h16 = phase[id] >> 16;
-  uint16_t out = 0;
-  out += (phase_h16 <  32768) * (phase_h16 - 0);
-  out += (phase_h16 >= 32768) * (65536 - phase_h16);
+  uint16_t out = phase_h16;
+  out += (phase_h16 >= 32768) * (65536 - (phase_h16 << 1));
   return ((out - 16384) * LFO_depth) >> 7;
 }
 
