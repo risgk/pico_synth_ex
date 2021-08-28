@@ -100,31 +100,31 @@ static inline Q28 Osc_phase_to_disp(uint32_t phase, uint8_t pitch) {
 
 static inline Q28 Osc_process(uint8_t id,
                               uint16_t full_pitch, Q14 pitch_mod_in) {
-  static uint32_t phase1[4]; // オシレータ1の位相
-  int32_t full_pitch1 = full_pitch + ((256 * pitch_mod_in) >> 14);
-  full_pitch1 += (full_pitch1 < 0)          * (0 - full_pitch1);
-  full_pitch1 -= (full_pitch1 > (120 << 8)) * (full_pitch1 - (120 << 8));
-  uint8_t pitch1      = (full_pitch1 + 128) >> 8; // Osc_tune_tableに合わせ+ 128
-  uint8_t tune_index1 = (full_pitch1 + 128) & 0xFF;
-  uint32_t freq1 = Osc_freq_table[pitch1];
-  phase1[id] += freq1 + (id << 7); // ボイス毎に周波数を少しずらす
-  phase1[id] += ((int32_t) (freq1 >> 8) * Osc_tune_table[tune_index1]) >> 6;
+  static uint32_t phase_1[4]; // オシレータ1の位相
+  int32_t full_pitch_1 = full_pitch + ((256 * pitch_mod_in) >> 14);
+  full_pitch_1 += (full_pitch_1 < 0)          * (0 - full_pitch_1);
+  full_pitch_1 -= (full_pitch_1 > (120 << 8)) * (full_pitch_1 - (120 << 8));
+  uint8_t pitch_1      = (full_pitch_1 + 128) >> 8;
+  uint8_t tune_index_1 = (full_pitch_1 + 128) & 0xFF;
+  uint32_t freq1 = Osc_freq_table[pitch_1];
+  phase_1[id] += freq1 + (id << 7); // ボイス毎に周波数を少しずらす
+  phase_1[id] += ((int32_t) (freq1 >> 8) * Osc_tune_table[tune_index_1]) >> 6;
 
-  static uint32_t phase2[4]; // オシレータ2の位相
-  int32_t full_pitch2 = full_pitch1 +
+  static uint32_t phase_2[4]; // オシレータ2の位相
+  int32_t full_pitch_2 = full_pitch_1 +
                         (Osc_2_coarse_pitch << 8) + (Osc_2_fine_pitch << 2);
-  full_pitch2 += (full_pitch2 < 0)          * (0 - full_pitch2);
-  full_pitch2 -= (full_pitch2 > (120 << 8)) * (full_pitch2 - (120 << 8));
-  uint8_t pitch2      = (full_pitch2 + 128) >> 8;
-  uint8_t tune_index2 = (full_pitch2 + 128) & 0xFF;
-  uint32_t freq2 = Osc_freq_table[pitch2];
-  phase2[id] += freq2 + (id << 7);
-  phase2[id] += ((int32_t) (freq2 >> 8) * Osc_tune_table[tune_index2]) >> 6;
+  full_pitch_2 += (full_pitch_2 < 0)          * (0 - full_pitch_2);
+  full_pitch_2 -= (full_pitch_2 > (120 << 8)) * (full_pitch_2 - (120 << 8));
+  uint8_t pitch_2      = (full_pitch_2 + 128) >> 8;
+  uint8_t tune_index_2 = (full_pitch_2 + 128) & 0xFF;
+  uint32_t freq2 = Osc_freq_table[pitch_2];
+  phase_2[id] += freq2 + (id << 7);
+  phase_2[id] += ((int32_t) (freq2 >> 8) * Osc_tune_table[tune_index_2]) >> 6;
 
   // TODO: wave_table切替えをスムーズにしたい（周期の頭で切替えるのが良い？）
-  return mul_32_u16_h32(Osc_phase_to_disp(phase1[id], pitch1),
+  return mul_32_u16_h32(Osc_phase_to_disp(phase_1[id], pitch_1),
                                 Osc_mix_table[Osc_1_2_mix - 0]) +
-         mul_32_u16_h32(Osc_phase_to_disp(phase2[id], pitch2),
+         mul_32_u16_h32(Osc_phase_to_disp(phase_2[id], pitch_2),
                                Osc_mix_table[64 - Osc_1_2_mix]);
 }
 
@@ -224,12 +224,12 @@ static inline Q14 LFO_process(uint8_t id) {
 }
 
 //////// PWMオーディオ出力部 /////////////////////
-#define PWMA_L_GPIO  (28)           // PWM出力するGPIO番号（L）
-#define PWMA_L_SLICE (6)            // PWMスライス番号（L）
-#define PWMA_L_CHAN  (PWM_CHAN_A)   // PWMチャンネル（L）
-#define PWMA_R_GPIO  (27)           // PWM出力するGPIO番号（R）
-#define PWMA_R_SLICE (5)            // PWMスライス番号（R）
-#define PWMA_R_CHAN  (PWM_CHAN_B)   // PWMチャンネル（R）
+#define PWMA_L_GPIO  (28)           // PWM出力するGPIO番号（左チャンネル）
+#define PWMA_L_SLICE (6)            // PWMスライス番号（左チャンネル）
+#define PWMA_L_CHAN  (PWM_CHAN_A)   // PWMチャンネル（左チャンネル）
+#define PWMA_R_GPIO  (27)           // PWM出力するGPIO番号（右チャンネル）
+#define PWMA_R_SLICE (5)            // PWMスライス番号（右チャンネル）
+#define PWMA_R_CHAN  (PWM_CHAN_B)   // PWMチャンネル（右チャンネル）
 #define PWMA_CYCLE   (FCLKSYS / FS) // PWM周期
 
 static void pwm_irq_handler();
@@ -256,10 +256,10 @@ static inline void PWMA_process(Q28 audio_in) {
 }
 
 //////// 割り込みハンドラとメイン関数 ////////////
-static volatile uint16_t s_time     = 0; // 開始時間
-static volatile uint16_t max_s_time = 0; // 最大開始時間
-static volatile uint16_t p_time     = 0; // 処理時間
-static volatile uint16_t max_p_time = 0; // 最大処理時間
+static volatile uint16_t start_time     = 0; // 開始時間
+static volatile uint16_t max_start_time = 0; // 最大開始時間
+static volatile uint16_t proc_time      = 0; // 処理時間
+static volatile uint16_t max_proc_time  = 0; // 最大処理時間
 
 static volatile uint8_t gate_voice[4];  // ゲート制御値（ボイス毎）
 static volatile uint8_t pitch_voice[4]; // ピッチ制御値（ボイス毎）
@@ -276,7 +276,7 @@ static inline Q28 process_voice(uint8_t id) {
 
 static void pwm_irq_handler() {
   pwm_clear_irq(PWMA_L_SLICE);
-  s_time = pwm_get_counter(PWMA_L_SLICE);
+  start_time = pwm_get_counter(PWMA_L_SLICE);
 
   Q28 voice_out[4];
   voice_out[0] = process_voice(0);
@@ -287,9 +287,9 @@ static void pwm_irq_handler() {
                 voice_out[2] + voice_out[3]) >> 2);
 
   uint16_t end_time = pwm_get_counter(PWMA_L_SLICE);
-  p_time = end_time - s_time; // 計算を簡略化
-  max_s_time += (s_time > max_s_time) * (s_time - max_s_time);
-  max_p_time += (p_time > max_p_time) * (p_time - max_p_time);
+  proc_time = end_time - start_time; // 計算を簡略化
+  max_start_time += (start_time > max_start_time) * (start_time - max_start_time);
+  max_proc_time += (proc_time > max_proc_time) * (proc_time - max_proc_time);
 }
 
 static inline void note_on_off(uint8_t key)
@@ -387,8 +387,8 @@ int main() {
       printf("EG Sustain Level  : %3hhu (C/c)\n", EG_sustain_level);
       printf("LFO Depth         : %3hhu (B/b)\n", LFO_depth);
       printf("LFO Rate          : %3hhu (N/n)\n", LFO_rate);
-      printf("Start Time        : %4hu/%4hu\n",   s_time, max_s_time);
-      printf("Processing Time   : %4hu/%4hu\n\n", p_time, max_p_time);
+      printf("Start Time        : %4hu/%4hu\n",   start_time, max_start_time);
+      printf("Processing Time   : %4hu/%4hu\n\n", proc_time, max_proc_time);
     }
   }
 }
