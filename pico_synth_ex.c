@@ -178,7 +178,7 @@ static inline Q28 Fil_process(uint8_t id, Q28 audio_in, Q14 cutoff_mod_in) {
 
 //////// アンプ //////////////////////////////////
 static inline Q28 Amp_process(uint8_t id, Q28 audio_in, Q14 gain_in) {
-  return (audio_in >> 14) * gain_in; // 計算を簡略化
+  return mul_32_16_h32(audio_in, gain_in) << 2;
 }
 
 //////// EG（Envelope Generator） ////////////////
