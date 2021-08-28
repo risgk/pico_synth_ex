@@ -69,7 +69,7 @@ static void Osc_init() {
   }
 
   for (uint8_t i = 0; i < 65; ++i) {
-    Osc_mix_table[i] = sqrtf((64 - i) / 64.0F) * ONE_Q14;
+    Osc_mix_table[i] = sqrtf((64 - i) / 64.0F) * ONE_Q14 * 0.5F;
   }
 }
 
@@ -199,14 +199,13 @@ static inline Q14 EG_process(uint8_t id, uint8_t gate_in) {
   curr_gate[id]          =  gate_in;
 
   Q14 attack_targ_level = ONE_Q14 + (ONE_Q14 >> 1);
-  curr_level[id] +=
-      (curr_attack_phase[id]) *
-      (((attack_targ_level - curr_level[id]) << 6) >> 14);
+  curr_level[id] += curr_attack_phase[id] *
+                    ((attack_targ_level - curr_level[id]) >> 5);
 
   Q14 decay_targ_level = (EG_sustain_level << 8) * curr_gate[id];
-  curr_level[id] +=
-      ((curr_attack_phase[id] == 0) & (curr_level[id] > decay_targ_level)) *
-      (((decay_targ_level - curr_level[id]) << 6) >> 14);
+  int32_t decay = (curr_attack_phase[id] == 0) &
+                  (curr_level[id] > decay_targ_level);
+  curr_level[id] += decay * ((decay_targ_level - curr_level[id]) >> 5);
 #endif
 
   return curr_level[id];
