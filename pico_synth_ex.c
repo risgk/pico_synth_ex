@@ -79,7 +79,7 @@ static void Osc_init() {
       for (uint16_t k = 1; k <= harm_max; ++k) {
         sum += (2 / PI) * (sinf(2 * PI * k * i / 512) / k);
       }
-      sum *= 0.5F;
+      sum *= 0.5F; // Osc_process() でオーバ・フローしないように必要
       Osc_wave_tables[pitch_div_4][i] = float2fix(sum, 14);
     }
   }
@@ -89,7 +89,7 @@ static void Osc_init() {
   }
 }
 
-static inline Q28 Osc_phase_to_disp(uint32_t phase, uint8_t pitch) {
+static inline Q28 Osc_phase_to_audio(uint32_t phase, uint8_t pitch) {
   Q14* wave_table = Osc_wave_tables[(pitch + 3) >> 2];
   uint16_t curr_index = phase >> 23;
   uint16_t next_index = (curr_index + 1) & 0x000001FF;
@@ -109,7 +109,7 @@ static inline Q28 Osc_process(uint8_t id,
   uint8_t pitch_1      = (full_pitch_1 + 128) >> 8;
   uint8_t tune_index_1 = (full_pitch_1 + 128) & 0xFF;
   uint32_t freq1 = Osc_freq_table[pitch_1];
-  phase_1[id] += freq1 + (id << 7); // ボイス毎に周波数を少しずらす
+  phase_1[id] += freq1 + ((id - 1) << 8); // ボイス毎にずらす
   phase_1[id] += ((int32_t) (freq1 >> 8) * Osc_tune_table[tune_index_1]) >> 6;
 
   static uint32_t phase_2[4]; // オシレータ2の位相
@@ -120,14 +120,14 @@ static inline Q28 Osc_process(uint8_t id,
   uint8_t pitch_2      = (full_pitch_2 + 128) >> 8;
   uint8_t tune_index_2 = (full_pitch_2 + 128) & 0xFF;
   uint32_t freq2 = Osc_freq_table[pitch_2];
-  phase_2[id] += freq2 + (id << 7);
+  phase_2[id] += freq2 + ((id - 1) << 8); // ボイス毎にずらす
   phase_2[id] += ((int32_t) (freq2 >> 8) * Osc_tune_table[tune_index_2]) >> 6;
 
   // TODO: wave_table切替えをスムーズにしたい（周期の頭で切替えるのが良い？）
-  return mul_32_u16_h32(Osc_phase_to_disp(phase_1[id], pitch_1),
-                                Osc_mix_table[Osc_1_2_mix - 0]) +
-         mul_32_u16_h32(Osc_phase_to_disp(phase_2[id], pitch_2),
-                               Osc_mix_table[64 - Osc_1_2_mix]);
+  return mul_32_u16_h32(Osc_phase_to_audio(phase_1[id], pitch_1),
+                                   Osc_mix_table[Osc_1_2_mix - 0]) +
+         mul_32_u16_h32(Osc_phase_to_audio(phase_2[id], pitch_2),
+                                   Osc_mix_table[64 - Osc_1_2_mix]);
 }
 
 //////// フィルタ ////////////////////////////////
@@ -215,7 +215,7 @@ static void LFO_init() {
 
 static inline Q14 LFO_process(uint8_t id) {
   static uint32_t phase[4]; // 位相
-  phase[id] += LFO_freq_table[LFO_rate] + (id << 7);
+  phase[id] += LFO_freq_table[LFO_rate] + ((id - 1) << 8); // ボイス毎にずらす
 
   // 三角波を生成
   uint16_t phase_h16 = phase[id] >> 16;
