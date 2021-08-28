@@ -224,27 +224,35 @@ static inline Q14 LFO_process(uint8_t id) {
 }
 
 //////// PWMオーディオ出力部 /////////////////////
-#define PWMA_GPIO  (28)           // PWM出力するGPIO番号
-#define PWMA_SLICE (6)            // PWMスライス番号
-#define PWMA_CHAN  (PWM_CHAN_A)   // PWMチャンネル
-#define PWMA_CYCLE (FCLKSYS / FS) // PWM周期
+#define PWMA_L_GPIO  (28)           // PWM出力するGPIO番号（L）
+#define PWMA_L_SLICE (6)            // PWMスライス番号（L）
+#define PWMA_L_CHAN  (PWM_CHAN_A)   // PWMチャンネル（L）
+#define PWMA_R_GPIO  (27)           // PWM出力するGPIO番号（R）
+#define PWMA_R_SLICE (5)            // PWMスライス番号（R）
+#define PWMA_R_CHAN  (PWM_CHAN_B)   // PWMチャンネル（R）
+#define PWMA_CYCLE   (FCLKSYS / FS) // PWM周期
 
 static void pwm_irq_handler();
 
 static void PWMA_init() {
-  gpio_set_function(PWMA_GPIO, GPIO_FUNC_PWM);
+  gpio_set_function(PWMA_R_GPIO, GPIO_FUNC_PWM);
+  gpio_set_function(PWMA_L_GPIO, GPIO_FUNC_PWM);
   irq_set_exclusive_handler(PWM_IRQ_WRAP, pwm_irq_handler);
   irq_set_enabled(PWM_IRQ_WRAP, true);
-  pwm_set_irq_enabled(PWMA_SLICE, true);
-  pwm_set_wrap(PWMA_SLICE, PWMA_CYCLE - 1);
-  pwm_set_chan_level(PWMA_SLICE, PWMA_CHAN, PWMA_CYCLE / 2);
-  pwm_set_enabled(PWMA_SLICE, true);
+  pwm_set_irq_enabled(PWMA_L_SLICE, true);
+  pwm_set_wrap(PWMA_R_SLICE, PWMA_CYCLE - 1);
+  pwm_set_wrap(PWMA_L_SLICE, PWMA_CYCLE - 1);
+  pwm_set_chan_level(PWMA_R_SLICE, PWMA_R_CHAN, PWMA_CYCLE / 2);
+  pwm_set_chan_level(PWMA_L_SLICE, PWMA_L_CHAN, PWMA_CYCLE / 2);
+  pwm_set_enabled(PWMA_R_SLICE, true);
+  pwm_set_enabled(PWMA_L_SLICE, true);
 }
 
 static inline void PWMA_process(Q28 audio_in) {
   int32_t level_int32 = (audio_in >> 18) + (PWMA_CYCLE / 2);
   uint16_t level = (level_int32 > 0) * level_int32;
-  pwm_set_chan_level(PWMA_SLICE, PWMA_CHAN, level);
+  pwm_set_chan_level(PWMA_R_SLICE, PWMA_R_CHAN, level);
+  pwm_set_chan_level(PWMA_L_SLICE, PWMA_L_CHAN, level);
 }
 
 //////// 割り込みハンドラとメイン関数 ////////////
@@ -267,8 +275,8 @@ static inline Q28 process_voice(uint8_t id) {
 }
 
 static void pwm_irq_handler() {
-  pwm_clear_irq(PWMA_SLICE);
-  s_time = pwm_get_counter(PWMA_SLICE);
+  pwm_clear_irq(PWMA_L_SLICE);
+  s_time = pwm_get_counter(PWMA_L_SLICE);
 
   Q28 voice_out[4];
   voice_out[0] = process_voice(0);
@@ -278,7 +286,7 @@ static void pwm_irq_handler() {
   PWMA_process((voice_out[0] + voice_out[1] +
                 voice_out[2] + voice_out[3]) >> 2);
 
-  uint16_t end_time = pwm_get_counter(PWMA_SLICE);
+  uint16_t end_time = pwm_get_counter(PWMA_L_SLICE);
   p_time = end_time - s_time; // 計算を簡略化
   max_s_time += (s_time > max_s_time) * (s_time - max_s_time);
   max_p_time += (p_time > max_p_time) * (p_time - max_p_time);
