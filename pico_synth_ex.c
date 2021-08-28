@@ -15,8 +15,8 @@ typedef int16_t Q14; // 小数部14ビットの符号付き固定小数点数
 #define FS      (48000)     // サンプリング周波数（Hz）
 #define FA      (440.0F)    // 基準周波数（Hz）
 
-static inline int32_t mul_32_32_h32(int32_t x, int32_t y) {
-  // 32ビット同士の乗算結果の上位32ビット
+static inline int32_t mul_s32_s32_h32(int32_t x, int32_t y) {
+  // 符号付き32ビット同士の乗算結果の上位32ビット
   int32_t x1 = x >> 16; uint32_t x0 = x & 0xFFFF;
   int32_t y1 = y >> 16; uint32_t y0 = y & 0xFFFF;
   int32_t x0_y1 = x0 * y1;
@@ -24,8 +24,8 @@ static inline int32_t mul_32_32_h32(int32_t x, int32_t y) {
   return (z >> 16) + (x0_y1 >> 16) + (x1 * y1);
 }
 
-static inline int32_t mul_32_16_h32(int32_t x, int16_t y) {
-  // 32ビットと16ビットの乗算結果の上位32ビット
+static inline int32_t mul_s32_s16_h32(int32_t x, int16_t y) {
+  // 符号付き32ビットと符号付き16ビットの乗算結果の上位32ビット
   int32_t x1 = x >> 16; uint32_t x0 = x & 0xFFFF;
   return ((x0 * y) >> 16) + (x1 * y);
 }
@@ -36,8 +36,8 @@ static inline uint32_t mul_u32_u16_h32(uint32_t x, uint16_t y) {
   return ((x0 * y) >> 16) + (x1 * y);
 }
 
-static inline int32_t mul_32_u16_h32(int32_t x, uint16_t y) {
-  // 32ビットと符号なし16ビットの乗算結果の上位32ビット
+static inline int32_t mul_s32_u16_h32(int32_t x, uint16_t y) {
+  // 符号付き32ビットと符号なし16ビットの乗算結果の上位32ビット
   int32_t x1 = x >> 16; uint32_t x0 = x & 0xFFFF;
   return ((x0 * y) >> 16) + (x1 * y);
 }
@@ -124,9 +124,9 @@ static inline Q28 Osc_process(uint8_t id,
   phase_2[id] += ((int32_t) (freq2 >> 8) * Osc_tune_table[tune_index_2]) >> 6;
 
   // TODO: wave_table切替えをスムーズにしたい（周期の頭で切替えるのが良い？）
-  return mul_32_u16_h32(Osc_phase_to_audio(phase_1[id], pitch_1),
+  return mul_s32_u16_h32(Osc_phase_to_audio(phase_1[id], pitch_1),
                                    Osc_mix_table[Osc_1_2_mix - 0]) +
-         mul_32_u16_h32(Osc_phase_to_audio(phase_2[id], pitch_2),
+         mul_s32_u16_h32(Osc_phase_to_audio(phase_2[id], pitch_2),
                                    Osc_mix_table[64 - Osc_1_2_mix]);
 }
 
@@ -169,9 +169,9 @@ static inline Q28 Filter_process(uint8_t id, Q28 audio_in, Q14 cutoff_mod_in) {
   static Q28 x1[4], x2[4], y1[4], y2[4];
   Q28 x0 = audio_in;
   Q28 x3 = x0 + (x1[id] << 1) + x2[id];
-  Q28 y0 = mul_32_32_h32(coefs->b0_a0, x3)     << 4;
-  y0    -= mul_32_32_h32(coefs->a1_a0, y1[id]) << 4;
-  y0    -= mul_32_32_h32(coefs->a2_a0, y2[id]) << 4;
+  Q28 y0 = mul_s32_s32_h32(coefs->b0_a0, x3)     << 4;
+  y0    -= mul_s32_s32_h32(coefs->a1_a0, y1[id]) << 4;
+  y0    -= mul_s32_s32_h32(coefs->a2_a0, y2[id]) << 4;
   x2[id] = x1[id]; y2[id] = y1[id];
   x1[id] = x0;     y1[id] = y0;
   return y0;
@@ -179,7 +179,7 @@ static inline Q28 Filter_process(uint8_t id, Q28 audio_in, Q14 cutoff_mod_in) {
 
 //////// アンプ //////////////////////////////////
 static inline Q28 Amp_process(uint8_t id, Q28 audio_in, Q14 gain_in) {
-  return mul_32_16_h32(audio_in, gain_in) << 2;
+  return mul_s32_s16_h32(audio_in, gain_in) << 2;
 }
 
 //////// EG（Envelope Generator） ////////////////
