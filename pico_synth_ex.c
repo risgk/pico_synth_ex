@@ -130,13 +130,13 @@ static inline Q28 Osc_process(uint8_t id,
 
 //////// フィルタ ////////////////////////////////
 struct F_COEFS { Q28 b0_a0, a1_a0, a2_a0; };
-static struct F_COEFS Fil_table[6][481]; // フィルタ係数群テーブル
+static struct F_COEFS Filter_table[6][481]; // フィルタ係数群テーブル
 
-static volatile uint8_t Fil_cutoff     = 120; // カットオフ設定値
-static volatile uint8_t Fil_resonance  = 0;   // レゾナンス設定値
-static volatile int8_t  Fil_mod_amount = 0;   // カットオフ変調量設定値
+static volatile uint8_t Filter_cutoff     = 120; // カットオフ設定値
+static volatile uint8_t Filter_resonance  = 0;   // レゾナンス設定値
+static volatile int8_t  Filter_mod_amount = 0;   // カットオフ変調量設定値
 
-static void Fil_init() {
+static void Filter_init() {
   for (uint8_t resonance = 0; resonance < 6; ++resonance) {
     for (uint16_t cutoff = 0; cutoff < 481; ++cutoff) {
       float f0    = FA * powf(2, ((cutoff / 4.0F) - 54) / 12);
@@ -147,23 +147,22 @@ static void Fil_init() {
       float a0    =  1 + alpha;
       float a1    = -2 * cosf(w0);
       float a2    =  1 - alpha;
-      Fil_table[resonance][cutoff].b0_a0 = float2fix(b0 / a0, 28);
-      Fil_table[resonance][cutoff].a1_a0 = float2fix(a1 / a0, 28);
-      Fil_table[resonance][cutoff].a2_a0 = float2fix(a2 / a0, 28);
+      Filter_table[resonance][cutoff].b0_a0 = float2fix(b0 / a0, 28);
+      Filter_table[resonance][cutoff].a1_a0 = float2fix(a1 / a0, 28);
+      Filter_table[resonance][cutoff].a2_a0 = float2fix(a2 / a0, 28);
     }
   }
 }
 
-static inline Q28 Fil_process(uint8_t id, Q28 audio_in, Q14 cutoff_mod_in) {
-  static uint8_t  f_counter[4];          // フィルタ処理回数
-  static uint16_t curr_cutoff[4];        // カットオフ現在値
-  int32_t targ_cutoff = Fil_cutoff << 2; // カットオフ目標値（設定値の4倍）
-  targ_cutoff += (Fil_mod_amount * cutoff_mod_in) >> (14 - 2);
+static inline Q28 Filter_process(uint8_t id, Q28 audio_in, Q14 cutoff_mod_in) {
+  static uint16_t curr_cutoff[4];           // カットオフ現在値
+  int32_t targ_cutoff = Filter_cutoff << 2; // カットオフ目標値
+  targ_cutoff += (Filter_mod_amount * cutoff_mod_in) >> (14 - 2);
   targ_cutoff += (targ_cutoff < 0)   * (0 - targ_cutoff);
   targ_cutoff -= (targ_cutoff > 480) * (targ_cutoff - 480);
-  curr_cutoff[id] += (curr_cutoff[id] < targ_cutoff); // 変化スピードを調整した
+  curr_cutoff[id] += (curr_cutoff[id] < targ_cutoff);
   curr_cutoff[id] -= (curr_cutoff[id] > targ_cutoff);
-  struct F_COEFS* coefs = &Fil_table[Fil_resonance][curr_cutoff[id]];
+  struct F_COEFS* coefs = &Filter_table[Filter_resonance][curr_cutoff[id]];
 
   static Q28 x1[4], x2[4], y1[4], y2[4];
   Q28 x0 = audio_in;
@@ -266,11 +265,11 @@ static volatile uint8_t pitch_voice[4]; // ピッチ制御値（ボイス毎）
 static volatile int8_t  octave_shift;   // キーのオクターブシフト量
 
 static inline Q28 process_voice(uint8_t id) {
-  Q14 lfo_out = LFO_process(id);
-  Q14 eg_out  = EG_process(id, gate_voice[id]);
-  Q28 osc_out = Osc_process(id, pitch_voice[id] << 8, lfo_out);
-  Q28 fil_out = Fil_process(id, osc_out, eg_out);
-  Q28 amp_out = Amp_process(id, fil_out, eg_out);
+  Q14 lfo_out    = LFO_process(id);
+  Q14 eg_out     = EG_process(id, gate_voice[id]);
+  Q28 osc_out    = Osc_process(id, pitch_voice[id] << 8, lfo_out);
+  Q28 filter_out = Filter_process(id, osc_out, eg_out);
+  Q28 amp_out    = Amp_process(id, filter_out, eg_out);
   return amp_out;
 }
 
@@ -288,8 +287,10 @@ static void pwm_irq_handler() {
 
   uint16_t end_time = pwm_get_counter(PWMA_L_SLICE);
   proc_time = end_time - start_time; // 計算を簡略化
-  max_start_time += (start_time > max_start_time) * (start_time - max_start_time);
-  max_proc_time += (proc_time > max_proc_time) * (proc_time - max_proc_time);
+  max_start_time +=
+      (start_time > max_start_time) * (start_time - max_start_time);
+  max_proc_time +=
+      (proc_time > max_proc_time) * (proc_time - max_proc_time);
 }
 
 static inline void note_on_off(uint8_t key)
@@ -318,7 +319,7 @@ int main() {
 
   set_sys_clock_khz(FCLKSYS / 1000, true);
   stdio_init_all();
-  LFO_init(); Osc_init(); Fil_init(); PWMA_init();
+  LFO_init(); Osc_init(); Filter_init(); PWMA_init();
 
   while (true) {
     switch (getchar_timeout_us(0)) {
@@ -349,12 +350,12 @@ int main() {
     case 'F': if (Osc_1_2_mix        > 0)   { --Osc_1_2_mix;        } break;
     case 'f': if (Osc_1_2_mix        < 64)  { ++Osc_1_2_mix;        } break;
 
-    case 'G': if (Fil_cutoff         > 0)   { --Fil_cutoff;         } break;
-    case 'g': if (Fil_cutoff         < 120) { ++Fil_cutoff;         } break;
-    case 'H': if (Fil_resonance      > 0)   { --Fil_resonance;      } break;
-    case 'h': if (Fil_resonance      < 5)   { ++Fil_resonance;      } break;
-    case 'J': if (Fil_mod_amount     > 0)   { --Fil_mod_amount;     } break;
-    case 'j': if (Fil_mod_amount     < +60) { ++Fil_mod_amount;     } break;
+    case 'G': if (Filter_cutoff      > 0)   { --Filter_cutoff;      } break;
+    case 'g': if (Filter_cutoff      < 120) { ++Filter_cutoff;      } break;
+    case 'H': if (Filter_resonance   > 0)   { --Filter_resonance;   } break;
+    case 'h': if (Filter_resonance   < 5)   { ++Filter_resonance;   } break;
+    case 'J': if (Filter_mod_amount  > 0)   { --Filter_mod_amount;  } break;
+    case 'j': if (Filter_mod_amount  < +60) { ++Filter_mod_amount;  } break;
 
     case 'Z': if (EG_attack_time     > 0)   { --EG_attack_time;     } break;
     case 'z': if (EG_attack_time     < 64)  { ++EG_attack_time;     } break;
@@ -379,9 +380,9 @@ int main() {
       printf("Osc 2 Coarse Pitch: %+3hd (S/s)\n", Osc_2_coarse_pitch);
       printf("Osc 2 Fine Pitch  : %+3hd (D/d)\n", Osc_2_fine_pitch);
       printf("Osc 1/2 Mix       : %3hhu (F/f)\n", Osc_1_2_mix);
-      printf("Fil Cutoff        : %3hhu (G/g)\n", Fil_cutoff);
-      printf("Fil Resonance     : %3hhu (H/h)\n", Fil_resonance);
-      printf("Fil EG Amount     : %+3hd (J/j)\n", Fil_mod_amount);
+      printf("Filter Cutoff     : %3hhu (G/g)\n", Filter_cutoff);
+      printf("Filter Resonance  : %3hhu (H/h)\n", Filter_resonance);
+      printf("Filter EG Amount  : %+3hd (J/j)\n", Filter_mod_amount);
       printf("EG Attack Time    : %3hhu (Z/z)\n", EG_attack_time);
       printf("EG Decay Time     : %3hhu (X/x)\n", EG_decay_time);
       printf("EG Sustain Level  : %3hhu (C/c)\n", EG_sustain_level);
