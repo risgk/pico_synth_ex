@@ -42,7 +42,7 @@ static inline int32_t mul_s32_u16_h32(int32_t x, uint16_t y) {
   return ((x0 * y) >> 16) + (x1 * y);
 }
 
-//////// オシレータ //////////////////////////////
+//////// オシレータ群 ////////////////////////////
 static uint32_t Osc_freq_table[122];      // 周波数テーブル
 static Q14      Osc_tune_table[256];      // 周波数微調整テーブル
 static Q14      Osc_wave_tables[31][512]; // 波形テーブル群
