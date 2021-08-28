@@ -13,20 +13,24 @@ Raspberry Pi Pico用のポリフォニック・シンセサイザです．
 といった「本格的なシンセサイザに近づけるための対応」を試みました．
 
 
-## 開発環境
+## 動作環境
 
 このプログラムは，
 
-- GNU Arm Embedded Toolchain Version 9-2019-q4-major（gcc-arm-none-eabi version 9.2.1）
+- Pimoroni Pico（ブートROMバージョン1（RP2040 bootrom B0 version））
+- Pimoroni Pico VGA Demo Base基板（PWMオーディオ出力に使用，市販品）
 - Raspberry Pi Pico C/C++ SDK version 1.1.2
-- RP2040 bootrom B0 version（ブートROMバージョン1）
+- GNU Arm Embedded Toolchain Version 9-2019-q4-major（gcc-arm-none-eabi version 9.2.1）
 
 の組み合わせで動作確認しています．
 
 
 ## ビルド方法
 
-pico_synth_exディレクトリにpico-sdk/external/pico_sdk_import.cmakeのコピーを置き，環境変数PICO_SDK_PATHにpico-sdkディレクトリへのパスをセットしておきます．buildディレクトリを作成すれば，pico-examplesと同様にcmakeやnmake（make）コマンドでビルドでき，pico_synth.uf2ファイルが出力されます．
+1. pico_synth_exディレクトリにpico-sdk/external/pico_sdk_import.cmakeのコピーを置く．
+2. 環境変数PICO_SDK_PATHにpico-sdkディレクトリへのパスをセットする．
+2. buildディレクトリを作成し，pico-examplesと同様にcmakeやnmake（make）コマンドでビルドを行う．
+4. pico_synth.uf2ファイルが出力される．
 
 
 ## 仕様
