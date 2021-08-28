@@ -65,8 +65,10 @@ static void Osc_init() {
         (powf(2, (tune_index - 128.0F) / (12 * 256)) * ONE_Q14) - ONE_Q14;
   }
 
+  // TODO: 4半音毎にテーブルを持っているが、2または3半音毎のほうが良いかも
   // TODO: 参照テーブルを追加して、Osc_wave_tablesの重複データを無くしたい
   for (uint8_t pitch_div_4 = 0; pitch_div_4 < 31; ++pitch_div_4) {
+    // TODO: ((FS - 0.1F) / 2) 以下という制約は不自然，改善の余地アリ
     uint16_t harm_max = // 最大倍音次数
         (((FS - 1.0F) / 2) * (1LL << 32) / FS) /
         Osc_freq_table[(pitch_div_4 << 2) + 1];
