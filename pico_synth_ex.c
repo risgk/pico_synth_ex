@@ -28,7 +28,7 @@ static Q14      Osc_mix_table[65];           // ミックス用テーブル
 static volatile uint8_t Osc_waveform       =   0; // 波形設定値
 static volatile int8_t  Osc_2_coarse_pitch =  +0; // オシレータ2粗ピッチ設定値
 static volatile int8_t  Osc_2_fine_pitch   =  +4; // オシレータ2微ピッチ設定値
-static volatile uint8_t Osc_1_2_mix        =  16; // オシレータミックス設定値
+static volatile uint8_t Osc_1_2_mix        =  16; // オシレータのミックス設定値
 
 static void Osc_init() {
   for (uint8_t pitch = 0; pitch < 122; ++pitch) {
@@ -69,7 +69,7 @@ static void Osc_init() {
   }
 
   for (uint8_t i = 0; i < 65; ++i) {
-    Osc_mix_table[i] = sqrtf((64 - i) / 64.0F) * ONE_Q14 * 0.5F;
+    Osc_mix_table[i] = sqrtf((64 - i) / 64.0F) * ONE_Q14;
   }
 }
 
