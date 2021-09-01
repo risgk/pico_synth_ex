@@ -178,7 +178,7 @@ static inline Q28 Amp_process(uint8_t id, Q28 audio_in, Q14 gain_in) {
 //////// EG（Envelope Generator） ////////////////
 static uint32_t EG_exp_table[65]; // 指数関数テーブル
 
-static volatile uint8_t EG_decay_time    =  32; // ディケイ・タイム設定値
+static volatile uint8_t EG_decay_time    =  36; // ディケイ・タイム設定値
 static volatile uint8_t EG_sustain_level =   0; // サスティン・レベル設定値
 
 static inline void EG_init() {
