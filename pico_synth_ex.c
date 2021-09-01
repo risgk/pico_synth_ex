@@ -119,7 +119,7 @@ struct FILTER_COEFS { Q28 b0_a0, a1_a0, a2_a0; }; // フィルタ係数群
 static struct FILTER_COEFS Filter_coefs_table[6][481]; // フィルタ係数群テーブル
 
 static volatile uint8_t Filter_cutoff     =  60; // カットオフ設定値
-static volatile uint8_t Filter_resonance  =   5; // レゾナンス設定値
+static volatile uint8_t Filter_resonance  =   3; // レゾナンス設定値
 static volatile int8_t  Filter_mod_amount = +60; // カットオフ変調量設定値
 
 static void Filter_init() {
@@ -178,7 +178,7 @@ static inline Q28 Amp_process(uint8_t id, Q28 audio_in, Q14 gain_in) {
 //////// EG（Envelope Generator） ////////////////
 static uint32_t EG_exp_table[65]; // 指数関数テーブル
 
-static volatile uint8_t EG_decay_time    =  36; // ディケイ・タイム設定値
+static volatile uint8_t EG_decay_time    =  32; // ディケイ・タイム設定値
 static volatile uint8_t EG_sustain_level =   0; // サスティン・レベル設定値
 
 static inline void EG_init() {
