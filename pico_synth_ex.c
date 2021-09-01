@@ -25,10 +25,10 @@ static Q14      Osc_tune_table[256];         // 周波数調整テーブル
 static Q14      Osc_wave_tables[2][31][512]; // 波形テーブル群
 static Q14      Osc_mix_table[65];           // ミックス用テーブル
 
-static volatile uint8_t Osc_waveform       = 0; // 波形設定値
-static volatile int8_t  Osc_2_coarse_pitch = 0; // オシレータ2粗ピッチ設定値
-static volatile int8_t  Osc_2_fine_pitch   = 4; // オシレータ2微ピッチ設定値
-static volatile uint8_t Osc_1_2_mix        = 0; // オシレータ1／2ミックス設定値
+static volatile uint8_t Osc_waveform       =   0; // 波形設定値
+static volatile int8_t  Osc_2_coarse_pitch =  +0; // オシレータ2粗ピッチ設定値
+static volatile int8_t  Osc_2_fine_pitch   =  +4; // オシレータ2微ピッチ設定値
+static volatile uint8_t Osc_1_2_mix        =  32; // オシレータミックス設定値
 
 static void Osc_init() {
   for (uint8_t pitch = 0; pitch < 122; ++pitch) {
@@ -118,9 +118,9 @@ struct FILTER_COEFS { Q28 b0_a0, a1_a0, a2_a0; }; // フィルタ係数群
 
 static struct FILTER_COEFS Filter_coefs_table[6][481]; // フィルタ係数群テーブル
 
-static volatile uint8_t Filter_cutoff     = 120; // カットオフ設定値
-static volatile uint8_t Filter_resonance  = 0;   // レゾナンス設定値
-static volatile int8_t  Filter_mod_amount = 0;   // カットオフ変調量設定値
+static volatile uint8_t Filter_cutoff     =  60; // カットオフ設定値
+static volatile uint8_t Filter_resonance  =   5; // レゾナンス設定値
+static volatile int8_t  Filter_mod_amount = +60; // カットオフ変調量設定値
 
 static void Filter_init() {
   for (uint8_t resonance = 0; resonance < 6; ++resonance) {
@@ -178,8 +178,8 @@ static inline Q28 Amp_process(uint8_t id, Q28 audio_in, Q14 gain_in) {
 //////// EG（Envelope Generator） ////////////////
 static uint32_t EG_exp_table[65]; // 指数関数テーブル
 
-static volatile uint8_t EG_decay_time    = 0;  // ディケイ・タイム設定値
-static volatile uint8_t EG_sustain_level = 64; // サスティン・レベル設定値
+static volatile uint8_t EG_decay_time    =  32; // ディケイ・タイム設定値
+static volatile uint8_t EG_sustain_level =   0; // サスティン・レベル設定値
 
 static inline void EG_init() {
   for (uint8_t index = 0; index < 65; ++index) {
@@ -199,7 +199,7 @@ static inline Q14 EG_process(uint8_t id, uint8_t gate_in) {
   int32_t attack_targ_level = (1 << 24) + (1 << 23);
   int32_t to_attack = curr_attack_phase[id];
   curr_level[id] += to_attack *
-                    ((attack_targ_level - curr_level[id]) >> 5);
+                    ((attack_targ_level - curr_level[id]) >> 8);
 
   static uint32_t decay_counter[4]; // ディケイ用カウンター
   ++decay_counter[id];
@@ -210,7 +210,7 @@ static inline Q14 EG_process(uint8_t id, uint8_t gate_in) {
                      (curr_level[id] > decay_targ_level) &
                      (decay_counter[id] == 0);
   curr_level[id] += to_decay *
-                    ((decay_targ_level - curr_level[id]) >> 5);
+                    ((decay_targ_level - curr_level[id]) >> 8);
 
   return curr_level[id] >> 10;
 }
@@ -218,8 +218,8 @@ static inline Q14 EG_process(uint8_t id, uint8_t gate_in) {
 //////// LFO（Low Frequency Oscillator） /////////
 static uint32_t LFO_freq_table[65]; // 周波数テーブル
 
-static volatile uint8_t LFO_depth = 0;  // 深さ設定値
-static volatile uint8_t LFO_rate  = 48; // 速さ設定値
+static volatile uint8_t LFO_depth =  16; // 深さ設定値
+static volatile uint8_t LFO_rate  =  48; // 速さ設定値
 
 static void LFO_init() {
   for (uint8_t rate = 0; rate < 65; ++rate) {
