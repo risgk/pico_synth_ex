@@ -176,7 +176,7 @@ static inline Q28 Amp_process(uint8_t id, Q28 audio_in, Q14 gain_in) {
 }
 
 //////// EG（Envelope Generator） ////////////////
-static uint32_t EG_exponential_table[65]; // 指数関数テーブル
+static uint32_t EG_exp_table[65]; // 指数関数テーブル
 
 static volatile uint8_t EG_attack_time   = 0;  // アタック・タイム設定値
 static volatile uint8_t EG_decay_time    = 0;  // ディケイ・タイム設定値
@@ -184,31 +184,40 @@ static volatile uint8_t EG_sustain_level = 64; // サスティン・レベル設
 
 static inline void EG_init() {
   for (uint8_t index = 0; index < 65; ++index) {
-    EG_exponential_table[index] = 24000 * powf(10, (index - 32.0F) / 16);
+    EG_exp_table[index] = 100 * powf(10, (index - 32.0F) / 16);
   }
 }
 
 static inline Q14 EG_process(uint8_t id, uint8_t gate_in) {
-  static Q14     curr_level[4];        // EG出力レベル現在値
-  static uint8_t curr_gate[4];         // ゲート入力レベル現在値
-  static uint8_t curr_attack_phase[4]; // 現在アタック・フェーズかどうか
+  static int32_t  curr_level[4];        // EG出力レベル現在値
+  static uint8_t  curr_gate[4];         // ゲート入力レベル現在値
+  static uint8_t  curr_attack_phase[4]; // 現在アタック・フェーズかどうか
 
-#if 1
   curr_attack_phase[id] |= (curr_gate[id] == 0) & gate_in;
-  curr_attack_phase[id] &= (curr_level[id] < ONE_Q14) & gate_in;
+  curr_attack_phase[id] &= (curr_level[id] < (1 << 24)) & gate_in;
   curr_gate[id]          =  gate_in;
 
-  Q14 attack_targ_level = ONE_Q14 + (ONE_Q14 >> 1);
-  curr_level[id] += curr_attack_phase[id] *
+  static uint32_t attack_counter[4]; // アタック用カウンター
+  ++attack_counter[id];
+  attack_counter[id] =
+      (attack_counter[id] < EG_exp_table[EG_attack_time]) * attack_counter[id];
+  int32_t attack_targ_level = (1 << 24) + (1 << 23);
+  int32_t to_attack = curr_attack_phase[id] & (attack_counter[id] == 0);
+  curr_level[id] += to_attack *
                     ((attack_targ_level - curr_level[id]) >> 5);
 
-  Q14 decay_targ_level = (EG_sustain_level << 8) * curr_gate[id];
-  int32_t decay = (curr_attack_phase[id] == 0) &
-                  (curr_level[id] > decay_targ_level);
-  curr_level[id] += decay * ((decay_targ_level - curr_level[id]) >> 5);
-#endif
+  static uint32_t decay_counter[4]; // ディケイ用カウンター
+  ++decay_counter[id];
+  decay_counter[id] =
+      (decay_counter[id] < decay_counter[EG_attack_time]) * decay_counter[id];
+  int32_t decay_targ_level = (EG_sustain_level << 18) * curr_gate[id];
+  int32_t to_decay = (curr_attack_phase[id] == 0) &
+                     (curr_level[id] > decay_targ_level) &
+                     (decay_counter[id] == 0);
+  curr_level[id] += to_decay *
+                    ((decay_targ_level - curr_level[id]) >> 5);
 
-  return curr_level[id];
+  return curr_level[id] >> 10;
 }
 
 //////// LFO（Low Frequency Oscillator） /////////
