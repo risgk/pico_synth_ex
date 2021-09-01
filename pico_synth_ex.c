@@ -62,7 +62,7 @@ static void Osc_init() {
         }
       }
       sum_saw    *= 0.5F; // Osc_process() でオーバ・フローしないように必要
-      sum_square *= 0.5F;
+      sum_square *= 0.25F;
       Osc_wave_tables[0][pitch_div_4][i] = float2fix(sum_saw,    14);
       Osc_wave_tables[1][pitch_div_4][i] = float2fix(sum_square, 14);
     }
