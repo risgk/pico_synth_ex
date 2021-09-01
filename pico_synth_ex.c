@@ -28,7 +28,7 @@ static Q14      Osc_mix_table[65];           // ミックス用テーブル
 static volatile uint8_t Osc_waveform       =   0; // 波形設定値
 static volatile int8_t  Osc_2_coarse_pitch =  +0; // オシレータ2粗ピッチ設定値
 static volatile int8_t  Osc_2_fine_pitch   =  +4; // オシレータ2微ピッチ設定値
-static volatile uint8_t Osc_1_2_mix        =  32; // オシレータミックス設定値
+static volatile uint8_t Osc_1_2_mix        =  16; // オシレータミックス設定値
 
 static void Osc_init() {
   for (uint8_t pitch = 0; pitch < 122; ++pitch) {
@@ -178,7 +178,7 @@ static inline Q28 Amp_process(uint8_t id, Q28 audio_in, Q14 gain_in) {
 //////// EG（Envelope Generator） ////////////////
 static uint32_t EG_exp_table[65]; // 指数関数テーブル
 
-static volatile uint8_t EG_decay_time    =  32; // ディケイ・タイム設定値
+static volatile uint8_t EG_decay_time    =  40; // ディケイ・タイム設定値
 static volatile uint8_t EG_sustain_level =   0; // サスティン・レベル設定値
 
 static inline void EG_init() {
@@ -196,21 +196,20 @@ static inline Q14 EG_process(uint8_t id, uint8_t gate_in) {
   curr_attack_phase[id] &= (curr_level[id] < (1 << 24)) & gate_in;
   curr_gate[id]          =  gate_in;
 
-  int32_t attack_targ_level = (1 << 24) + (1 << 23);
-  int32_t to_attack = curr_attack_phase[id];
-  curr_level[id] += to_attack *
-                    ((attack_targ_level - curr_level[id]) >> 8);
-
-  static uint32_t decay_counter[4]; // ディケイ用カウンター
-  ++decay_counter[id];
-  decay_counter[id] =
-      (decay_counter[id] < EG_exp_table[EG_decay_time]) * decay_counter[id];
-  int32_t decay_targ_level = (EG_sustain_level << 18) * curr_gate[id];
-  int32_t to_decay = (curr_attack_phase[id] == 0) &
-                     (curr_level[id] > decay_targ_level) &
-                     (decay_counter[id] == 0);
-  curr_level[id] += to_decay *
-                    ((decay_targ_level - curr_level[id]) >> 8);
+  if (curr_attack_phase[id]) {
+    int32_t attack_targ_level = (1 << 24) + (1 << 23);
+    curr_level[id] += ((attack_targ_level - curr_level[id]) >> 5);
+  } else {
+    static uint32_t decay_counter[4]; // ディケイ用カウンター
+    ++decay_counter[id];
+    decay_counter[id] =
+        (decay_counter[id] < EG_exp_table[EG_decay_time]) * decay_counter[id];
+    int32_t decay_targ_level = (EG_sustain_level << 18) * curr_gate[id];
+    int32_t to_decay = (curr_level[id] > decay_targ_level) &
+                       (decay_counter[id] == 0);
+    curr_level[id] += to_decay *
+                      ((decay_targ_level - curr_level[id]) >> 5);
+  }
 
   return curr_level[id] >> 10;
 }
