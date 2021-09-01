@@ -209,7 +209,7 @@ static inline Q14 EG_process(uint8_t id, uint8_t gate_in) {
   static uint32_t decay_counter[4]; // ディケイ用カウンター
   ++decay_counter[id];
   decay_counter[id] =
-      (decay_counter[id] < decay_counter[EG_attack_time]) * decay_counter[id];
+      (decay_counter[id] < EG_exp_table[EG_decay_time]) * decay_counter[id];
   int32_t decay_targ_level = (EG_sustain_level << 18) * curr_gate[id];
   int32_t to_decay = (curr_attack_phase[id] == 0) &
                      (curr_level[id] > decay_targ_level) &
