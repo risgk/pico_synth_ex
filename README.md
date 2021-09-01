@@ -62,6 +62,26 @@ Raspberry Pi Pico用のポリフォニック・シンセサイザです．
 - 'N'／'n'：LFOの速さ設定値を1下げる／上げる（0～64，周波数が約0.2Hz～約20Hzに変化）
 
 
+## 状態プリント例
+
+    Pitch             : [  60,  64,  67,  71 ]
+    Gate              : [   1,   1,   1,   1 ]
+    Octave Shift      :  +0 (1/9)
+    Osc Waveform      :   0 (A/a)
+    Osc 2 Coarse Pitch:  +0 (S/s)
+    Osc 2 Fine Pitch  :  +4 (D/d)
+    Osc 1/2 Mix       :  16 (F/f)
+    Filter Cutoff     :  60 (G/g)
+    Filter Resonance  :   3 (H/h)
+    Filter EG Amount  : +60 (J/j)
+    EG Decay Time     :  40 (X/x)
+    EG Sustain Level  :   0 (C/c)
+    LFO Depth         :  16 (B/b)
+    LFO Rate          :  48 (N/n)
+    Start Time        :   44/  47
+    Processing Time   : 2238/2242
+
+
 ## 参考文献
 
 - 石垣 良；リアルタイム処理のために軽量化！シンセサイザの製作，Interface，2021年8月号，CQ出版社，pp.142-153．  
