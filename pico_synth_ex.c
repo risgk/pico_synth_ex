@@ -178,7 +178,6 @@ static inline Q28 Amp_process(uint8_t id, Q28 audio_in, Q14 gain_in) {
 //////// EG（Envelope Generator） ////////////////
 static uint32_t EG_exp_table[65]; // 指数関数テーブル
 
-static volatile uint8_t EG_attack_time   = 0;  // アタック・タイム設定値
 static volatile uint8_t EG_decay_time    = 0;  // ディケイ・タイム設定値
 static volatile uint8_t EG_sustain_level = 64; // サスティン・レベル設定値
 
@@ -197,12 +196,8 @@ static inline Q14 EG_process(uint8_t id, uint8_t gate_in) {
   curr_attack_phase[id] &= (curr_level[id] < (1 << 24)) & gate_in;
   curr_gate[id]          =  gate_in;
 
-  static uint32_t attack_counter[4]; // アタック用カウンター
-  ++attack_counter[id];
-  attack_counter[id] =
-      (attack_counter[id] < EG_exp_table[EG_attack_time]) * attack_counter[id];
   int32_t attack_targ_level = (1 << 24) + (1 << 23);
-  int32_t to_attack = curr_attack_phase[id] & (attack_counter[id] == 0);
+  int32_t to_attack = curr_attack_phase[id];
   curr_level[id] += to_attack *
                     ((attack_targ_level - curr_level[id]) >> 5);
 
@@ -379,8 +374,6 @@ int main() {
     case 'J': if (Filter_mod_amount  > +0)  { --Filter_mod_amount;  } break;
     case 'j': if (Filter_mod_amount  < +60) { ++Filter_mod_amount;  } break;
 
-    case 'Z': if (EG_attack_time     > 0)   { --EG_attack_time;     } break;
-    case 'z': if (EG_attack_time     < 64)  { ++EG_attack_time;     } break;
     case 'X': if (EG_decay_time      > 0)   { --EG_decay_time;      } break;
     case 'x': if (EG_decay_time      < 64)  { ++EG_decay_time;      } break;
     case 'C': if (EG_sustain_level   > 0)   { --EG_sustain_level;   } break;
@@ -405,7 +398,6 @@ int main() {
       printf("Filter Cutoff     : %3hhu (G/g)\n", Filter_cutoff);
       printf("Filter Resonance  : %3hhu (H/h)\n", Filter_resonance);
       printf("Filter EG Amount  : %+3hd (J/j)\n", Filter_mod_amount);
-      printf("EG Attack Time    : %3hhu (Z/z)\n", EG_attack_time);
       printf("EG Decay Time     : %3hhu (X/x)\n", EG_decay_time);
       printf("EG Sustain Level  : %3hhu (C/c)\n", EG_sustain_level);
       printf("LFO Depth         : %3hhu (B/b)\n", LFO_depth);
