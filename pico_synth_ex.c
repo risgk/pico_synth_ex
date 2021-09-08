@@ -92,7 +92,7 @@ static inline Q28 Osc_process(uint8_t id,
   uint8_t pitch_1 = (full_pitch_1 + 128) >> 8;
   uint8_t tune_1  = (full_pitch_1 + 128) & 0xFF;
   uint32_t freq_1 = Osc_freq_table[pitch_1];
-  phase_1[id] += freq_1 + ((id - 1) << 8); // ボイス毎にずらす
+  phase_1[id] += freq_1 - ((id - 1) << 8); // ボイス毎にずらす
   phase_1[id] += ((int32_t) (freq_1 >> 8) * Osc_tune_table[tune_1]) >> 6;
 
   static uint32_t phase_2[4]; // オシレータ2の位相
@@ -103,7 +103,7 @@ static inline Q28 Osc_process(uint8_t id,
   uint8_t pitch_2 = (full_pitch_2 + 128) >> 8;
   uint8_t tune_2  = (full_pitch_2 + 128) & 0xFF;
   uint32_t freq_2 = Osc_freq_table[pitch_2];
-  phase_2[id] += freq_2 + ((id - 1) << 8); // ボイス毎にずらす
+  phase_2[id] += freq_2 - ((id - 1) << 8); // ボイス毎にずらす
   phase_2[id] += ((int32_t) (freq_2 >> 8) * Osc_tune_table[tune_2]) >> 6;
 
   // TODO: wave_table切替えをスムーズにしたい（周期の頭で切替えるのが良い？）
@@ -229,7 +229,7 @@ static void LFO_init() {
 
 static inline Q14 LFO_process(uint8_t id) {
   static uint32_t phase[4]; // 位相
-  phase[id] += LFO_freq_table[LFO_rate] + ((id - 1) << 8); // ボイス毎にずらす
+  phase[id] += LFO_freq_table[LFO_rate] - ((id - 1) << 8); // ボイス毎にずらす
 
   // 三角波を生成
   uint16_t phase_h16 = phase[id] >> 16;
